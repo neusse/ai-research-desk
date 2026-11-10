@@ -78,8 +78,12 @@ def _current() -> dict:
     return {"rating": RATING_VERSION, "factors": FACTORS_VERSION}
 
 
-def standing(horizon: str) -> dict:
+def standing(horizon: str, methodology: str = "company") -> dict:
     """What is known about this horizon's rating, for the reports to print."""
+    if methodology != "company":
+        return {**_UNKNOWN, "measured_on": None, "stale": True,
+                "summary": "The equity-ETF formula has not been historically measured.",
+                "advice": "Treat the ETF rating as a transparent screen, not a forecast."}
     finding = FINDINGS.get(horizon)
     if _current() != MEASURED_AGAINST or not finding:
         out = {**_UNKNOWN, "measured_on": None, "stale": True}

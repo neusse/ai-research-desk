@@ -328,6 +328,20 @@ def test_reports_mode_memo_lists_each_engine_without_a_combined_rating():
     assert "ai-hedge-fund" not in md.split("## Desk reports")[1].split("---")[0]
 
 
+def test_combined_memo_preserves_edge_etf_methodology_annotation():
+    edge = {**_edge(), "methodology":
+            "ETF methodology used: company GAAP fundamentals do not apply; this model does not "
+            "assess distribution sustainability."}
+    bundle = {"ticker": "SPYI", "date": "2026-09-15", "owns": False,
+              "horizons": {}, "mode": "reports", "tradingagents": None,
+              "ai_hedge_fund": None, "edge_desk": edge,
+              "costs": {"edge_desk": 0, "desk": 0, "total": 0, "billing": "max"},
+              "files": {"json": "x.json"}}
+    md = markdown(bundle)
+    assert "## Methodology annotation" in md
+    assert "does not assess distribution sustainability" in md
+
+
 def test_withdrawn_needs_the_owner_to_have_conceded_in_that_round():
     """The audit's A05. The old check accepted "withdrawn" if the owner merely spoke in the cited round
     (every manager speaks every round) or conceded in any round at all."""

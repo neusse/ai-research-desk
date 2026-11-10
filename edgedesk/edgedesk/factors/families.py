@@ -26,7 +26,8 @@ from dataclasses import dataclass, field
 from edgedesk.evidence.package import Evidence
 from edgedesk.factors.scale import band, blend, inverse, percentile
 
-FACTORS_VERSION = "1.1.0"   # 1.1.0: current valuation is priced at the decision date, not the filing date
+FACTORS_VERSION = "1.1.0"   # Company factors: current valuation is priced at the decision date
+ETF_FACTORS_VERSION = "etf-1.0.0"
 
 
 @dataclass(frozen=True)
@@ -75,6 +76,40 @@ def _family(key: str, label: str, signals: list[Signal],
 def _m(ev: Evidence, key: str):
     latest = ev.decision_metrics or {}
     return latest.get(key)
+
+
+def fund(ev: Evidence) -> Family:
+    """Structure and implementation quality for an equity ETF.
+
+    Distribution yield is deliberately absent: cash distributed is not the same
+    as return earned, particularly for option-income funds and return of capital.
+    """
+    f = ev.fund or {}
+    expense = f.get("expense_ratio")
+    category_expense = f.get("category_expense_ratio")
+    relative_fee = expense / category_expense if expense is not None and category_expense else None
+    concentration = sum((h.get("weight") or 0.0) for h in (f.get("top_holdings") or [])) or None
+    premium = f.get("premium_discount")
+    abs_premium = abs(premium) if premium is not None else None
+    signals = [
+        Signal("expense_ratio", "Annual expense ratio", expense,
+               inverse(expense, [(0.0, 0), (0.002, 10), (0.005, 35), (0.010, 70), (0.020, 100)]),
+               0.30, "fund.expense_ratio"),
+        Signal("relative_fee", "Expense ratio against category average", relative_fee,
+               inverse(relative_fee, [(0.5, 0), (1.0, 50), (1.5, 100)]),
+               0.15, "fund.category_expense_ratio"),
+        Signal("fund_assets", "Fund net assets", f.get("total_assets"),
+               band(f.get("total_assets"), [(50e6, 10), (250e6, 40), (1e9, 70), (10e9, 100)]),
+               0.25, "fund.total_assets",
+               note="Scale is a liquidity and closure-risk proxy, not a return forecast"),
+        Signal("top_holdings_concentration", "Reported top-holdings concentration", concentration,
+               inverse(concentration, [(0.10, 0), (0.25, 30), (0.50, 70), (0.80, 100)]),
+               0.20, "fund.top_holdings_weight"),
+        Signal("nav_gap", "Absolute premium or discount to NAV", abs_premium,
+               inverse(abs_premium, [(0.0, 0), (0.001, 15), (0.005, 60), (0.020, 100)]),
+               0.10, "fund.premium_discount"),
+    ]
+    return _family("fund", "Fund structure", signals)
 
 
 # ---------------------------------------------------------------------------
@@ -369,5 +404,7 @@ BUILDERS = {
 def compute(ev: Evidence, panel: dict | None = None) -> dict[str, Family]:
     """Every family for one evidence package, keyed by family name."""
     out = {key: builder(ev) for key, builder in BUILDERS.items()}
+    if (ev.profile or {}).get("security_type") == "ETF":
+        out["fund"] = fund(ev)
     out["valuation"] = valuation(ev, panel)
     return out

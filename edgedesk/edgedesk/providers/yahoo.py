@@ -60,6 +60,15 @@ class YahooClient:
         info = self._call(ticker, "info", lambda t: t.info)
         return info if isinstance(info, dict) and info.get("quoteType") else {}
 
+    def fund_data(self, ticker: str) -> dict | None:
+        """Normalize the current subset of Yahoo fund data used by the ETF model."""
+        info = self.info(ticker)
+        if str(info.get("quoteType") or "").upper() != "ETF":
+            return None
+        raw = self._call(ticker, "fund-data",
+                         lambda t: _extract_fund_data(t.funds_data, info, ticker))
+        return raw if isinstance(raw, dict) else None
+
     def earnings_events(self, ticker: str, limit: int) -> list[EarningsEvent]:
         """Reported quarters, newest first (scheduled future dates excluded)."""
         df = self._call(ticker, f"earnings:{limit}",
@@ -283,3 +292,65 @@ def _to_date(v) -> date | None:
         return date.fromisoformat(str(v)[:10])
     except ValueError:
         return None
+
+
+def _clean_text(value) -> str | None:
+    if value is None:
+        return None
+    return str(value).replace("\ufffd", "").strip() or None
+
+
+def _extract_fund_data(funds, info: dict, ticker: str) -> dict:
+    """Convert yfinance's mixed dict/DataFrame fund surface into stable primitives."""
+    overview = getattr(funds, "fund_overview", None) or {}
+    allocations = getattr(funds, "asset_classes", None) or {}
+    operations = getattr(funds, "fund_operations", None)
+    holdings = getattr(funds, "top_holdings", None)
+    sectors = getattr(funds, "sector_weightings", None) or {}
+
+    def operation(row: str, column: str | None = None):
+        if operations is None or not hasattr(operations, "loc"):
+            return None
+        try:
+            values = operations.loc[row]
+        except (KeyError, TypeError):
+            return None
+        if column:
+            return _num(values.get(column))
+        preferred = dash_symbol(ticker)
+        if preferred in getattr(values, "index", []):
+            return _num(values.get(preferred))
+        for key in getattr(values, "index", []):
+            if str(key).lower() != "category average":
+                return _num(values.get(key))
+        return None
+
+    top: list[dict] = []
+    if holdings is not None and hasattr(holdings, "iterrows"):
+        for symbol, row in holdings.iterrows():
+            weight = _num(row.get("Holding Percent"))
+            if weight is not None:
+                top.append({"symbol": str(symbol), "name": _clean_text(row.get("Name") or symbol),
+                            "weight": weight})
+
+    nav = _num(info.get("navPrice"))
+    market = _num(info.get("regularMarketPrice") or info.get("currentPrice"))
+    premium = ((market - nav) / nav) if nav and market is not None else None
+    return {
+        "category": overview.get("categoryName") or info.get("category"),
+        "family": overview.get("family") or info.get("fundFamily"),
+        "legal_type": overview.get("legalType") or info.get("legalType"),
+        "description": _clean_text(getattr(funds, "description", None)),
+        "expense_ratio": operation("Annual Report Expense Ratio"),
+        "category_expense_ratio": operation("Annual Report Expense Ratio", "Category Average"),
+        "total_assets": _num(info.get("totalAssets")),
+        "nav_price": nav,
+        "market_price": market,
+        "premium_discount": premium,
+        "stock_position": _num(allocations.get("stockPosition")),
+        "bond_position": _num(allocations.get("bondPosition")),
+        "cash_position": _num(allocations.get("cashPosition")),
+        "top_holdings": top,
+        "sector_weightings": {str(k): v for k, v in sectors.items() if _num(v) is not None},
+        "as_of": date.today().isoformat(),
+    }

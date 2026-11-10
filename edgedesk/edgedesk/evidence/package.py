@@ -90,6 +90,7 @@ class Evidence:
     breakdown: dict | None = None
     calendar: dict | None = None
     dividend: dict | None = None
+    fund: dict | None = None
     release: dict | None = None
     news: list[dict] = field(default_factory=list)
     caveats: list[Caveat] = field(default_factory=list)
@@ -150,6 +151,7 @@ class Evidence:
             "breakdown": self.breakdown,
             "calendar": self.calendar,
             "dividend": self.dividend,
+            "fund": self.fund,
             "release": self.release,
             "news": self.news,
             "facts": {k: asdict(v) for k, v in sorted(self.facts.items())},
@@ -175,6 +177,7 @@ def collect(ticker: str, as_of: date, client: DataClient) -> Evidence:
     )
     _collect_profile(ev, client)
     _collect_market(ev, as_of, client)
+    _collect_fund(ev, client)
     _collect_fundamentals(ev, as_of, client)
     _collect_estimates(ev, client)
     _collect_events(ev, as_of, client)
@@ -196,7 +199,7 @@ def _collect_profile(ev: Evidence, client: DataClient) -> None:
                 f"{profile.get('sic')} would place it elsewhere" if overridden
                 else f"mapped from SIC {profile.get('sic')}, benchmark {etf}")
         ev.add(Fact("pro.sector", "Sector", sector, "text", "computed", ev.as_of, note=note))
-    else:
+    elif profile.get("security_type") != "ETF":
         ev.warn("no_sector", INFO,
                 "No sector could be mapped from the SIC code; relative strength "
                 "is measured against the market only.")
@@ -324,6 +327,8 @@ def _collect_relative(ev: Evidence, as_of: date, client: DataClient) -> None:
 
 
 def _collect_fundamentals(ev: Evidence, as_of: date, client: DataClient) -> None:
+    if (ev.profile or {}).get("security_type") == "ETF":
+        return
     try:
         rows = client.metrics(ev.ticker, as_of, limit=12)
     except Exception as exc:                       # noqa: BLE001
@@ -376,6 +381,56 @@ def _collect_fundamentals(ev: Evidence, as_of: date, client: DataClient) -> None
     ):
         if latest.get(key) is not None:
             ev.add(Fact(fid, label, latest[key], unit, "edgar", stamp, note=note))
+
+
+def _collect_fund(ev: Evidence, client: DataClient) -> None:
+    """Collect current fund structure for ETFs; company accounts do not apply."""
+    if (ev.profile or {}).get("security_type") != "ETF":
+        return
+    if ev.is_historical:
+        ev.warn("fund_data_excluded", INFO,
+                "Current ETF holdings and fee data were excluded from this historical run "
+                "because the free source has no point-in-time history.")
+        return
+    try:
+        fund = client.fund_data(ev.ticker)
+    except Exception as exc:                       # noqa: BLE001
+        ev.warn("no_fund_data", WITHHOLD, f"ETF structure data could not be fetched: {exc}")
+        return
+    if not fund:
+        ev.warn("no_fund_data", WITHHOLD,
+                "The security is an ETF, but no fund structure data were available; a company "
+                "fundamentals rating would be the wrong substitute.")
+        return
+    ev.fund = fund
+    stock = fund.get("stock_position")
+    if stock is None or stock < 0.50:
+        ev.warn("unsupported_etf_type", WITHHOLD,
+                "This ETF is not primarily an equity fund. Edge Desk's ETF model currently "
+                "supports equity ETFs only; bond, commodity, cash and multi-asset funds need "
+                "different benchmarks and risk factors.")
+        return
+    ev.warn("etf_methodology", DEGRADE,
+            "ETF methodology used: the rating is based on fund structure, fees, concentration, "
+            "market trend and performance relative to SPY. Company GAAP fundamentals do not "
+            "apply. This model does not assess distribution sustainability or treat a high "
+            "distribution rate as investment return.")
+    top = fund.get("top_holdings") or []
+    top_weight = sum((h.get("weight") or 0.0) for h in top)
+    stamp = fund.get("as_of") or ev.as_of
+    for fid, label, value, unit in (
+        ("fund.expense_ratio", "Expense ratio", fund.get("expense_ratio"), "pct"),
+        ("fund.category_expense_ratio", "Category-average expense ratio",
+         fund.get("category_expense_ratio"), "pct"),
+        ("fund.total_assets", "Fund net assets", fund.get("total_assets"), "usd"),
+        ("fund.nav_price", "Net asset value", fund.get("nav_price"), "price"),
+        ("fund.premium_discount", "Market price premium/discount to NAV",
+         fund.get("premium_discount"), "pct"),
+        ("fund.stock_position", "Equity allocation", stock, "pct"),
+        ("fund.top_holdings_weight", "Reported top-holdings concentration", top_weight, "pct"),
+    ):
+        if value is not None:
+            ev.add(Fact(fid, label, value, unit, "yahoo", stamp))
 
 
 def _collect_valuation_now(ev: Evidence, as_of: date, client: DataClient,
@@ -456,6 +511,8 @@ def _collect_estimates(ev: Evidence, client: DataClient) -> None:
     """Consensus is current-only. It describes today, so a historical run must
     not see it at all: applying today's targets to a date two months back is the
     cleanest way to manufacture a result that could never have existed."""
+    if (ev.profile or {}).get("security_type") == "ETF":
+        return
     if ev.is_historical:
         ev.warn("consensus_excluded", INFO,
                 "This run is historical, so current analyst consensus was excluded "
@@ -533,6 +590,8 @@ def _collect_events(ev: Evidence, as_of: date, client: DataClient) -> None:
         ev.news = [n.model_dump() for n in client.news(ev.ticker, as_of, start, limit=40)]
     except Exception as exc:                       # noqa: BLE001
         ev.warn("no_news", INFO, f"News headlines were unavailable: {exc}")
+    if (ev.profile or {}).get("security_type") == "ETF":
+        return
     try:
         release = client.latest_release(ev.ticker, start, as_of)
     except Exception as exc:                       # noqa: BLE001
