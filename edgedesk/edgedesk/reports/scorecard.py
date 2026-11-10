@@ -13,6 +13,7 @@ not there.
 from __future__ import annotations
 
 from edgedesk.reports import longterm_block, swing_block
+from edgedesk.reports.common import foreign_filer_methodology
 
 ORDER = ("swing", "long_term")
 
@@ -60,6 +61,10 @@ def render(run: dict) -> str:
                f"{_price(anchors.get('last_close'))}"
                f"{_dividend_bit(ev)}")
     out.append(_rule(78, "="))
+    method = foreign_filer_methodology(ev)
+    if method:
+        out.append(f"METHOD: {method}")
+        out.append(_rule())
 
     for key in ORDER:
         out.extend(_horizon_block(run, key))

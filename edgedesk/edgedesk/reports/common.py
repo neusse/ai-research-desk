@@ -15,6 +15,20 @@ HORIZON_ORDER = ("swing", "long_term")
 WINDOWS = ("1m", "3m", "6m", "12m")
 
 
+def foreign_filer_methodology(ev: dict) -> str | None:
+    """A prominent annotation when 20-F/6-K normalization was used."""
+    caveat = next((c for c in (ev.get("caveats") or [])
+                   if c.get("code") == "foreign_filer_normalized"), None)
+    if not caveat:
+        return None
+    report = ((ev.get("profile") or {}).get("latest_foreign_report") or {})
+    annual = report.get("form") or "20-F/40-F"
+    return (f"Foreign-filer normalization used. Standard US GAAP facts from the issuer's "
+            f"annual {annual} and financial 6-K filings were converted into point-in-time TTM "
+            "periods. Interim 6-K disclosure is less uniform than a 10-Q, so data quality and "
+            "rating confidence are degraded.")
+
+
 def price(v) -> str:
     return "n/a" if v is None else f"${v:,.2f}"
 

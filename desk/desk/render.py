@@ -67,6 +67,9 @@ def markdown(bundle: dict) -> str:
     else:
         out += ["_The engines were run without a debate: each report stands on its own and there is no "
                 "combined rating._", ""]
+    if edge and edge.get("methodology"):
+        out += ["## Methodology annotation", "",
+                f"- **Edge Desk:** {edge['methodology']}", ""]
     out += valuation_section(shared.get("valuation") or {})
 
     for key, h in horizons.items():

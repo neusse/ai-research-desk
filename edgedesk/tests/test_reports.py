@@ -36,6 +36,16 @@ def withheld(home):
     return run_mod.analyze("TEST", AS_OF, client=FakeClient(metrics=[]), save=False)
 
 
+@pytest.fixture
+def foreign_filer(home):
+    profile = {"cik": 1, "name": "Arm Holdings plc", "sic": "3674",
+               "sic_description": "Semiconductors", "exchanges": ["Nasdaq"],
+               "latest_report": None,
+               "latest_foreign_report": {"form": "20-F", "filed": "2026-06-24",
+                                           "period": "2026-03-31"}}
+    return run_mod.analyze("ARM", AS_OF, client=FakeClient(profile=profile), save=False)
+
+
 # ---------------------------------------------------------------------------
 # Agreement
 # ---------------------------------------------------------------------------
@@ -45,6 +55,13 @@ def test_every_format_renders(run, fmt):
     text = reports.render(run, fmt)
     assert text.strip()
     assert run["ticker"] in text
+
+
+@pytest.mark.parametrize("fmt", TEXTUAL)
+def test_every_report_annotates_foreign_filer_normalization(foreign_filer, fmt):
+    text = reports.render(foreign_filer, fmt)
+    assert "Foreign-filer normalization used" in text
+    assert "20-F" in text and "financial 6-K" in text
 
 
 @pytest.mark.parametrize("fmt", TEXTUAL)

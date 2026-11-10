@@ -176,3 +176,31 @@ def test_a_run_without_alpaca_keys_says_its_prices_are_from_yahoo(tmp_path, monk
                           is_historical=False)
     package._collect_market(ev, __import__("datetime").date(2026, 9, 15), client)
     assert any(c.code == "prices_from_yahoo" and c.severity == "info" for c in ev.caveats)
+
+
+def test_foreign_filer_caveat_names_the_filing_and_parser_limit(home):
+    from tests.conftest import FakeClient
+    profile = {"cik": 1, "name": "Arm Holdings plc", "sic": "3674",
+               "sic_description": "Semiconductors", "exchanges": ["Nasdaq"],
+               "latest_report": None,
+               "latest_foreign_report": {"form": "20-F", "filed": "2026-06-24",
+                                           "period": "2026-03-31"}}
+    run = run_mod.analyze("ARM", AS_OF, client=FakeClient(metrics=[], profile=profile), save=False)
+    caveat = next(c for c in run["evidence"]["caveats"] if c["code"] == "no_gaap_fundamentals")
+    assert "20-F filed 2026-06-24" in caveat["message"]
+    assert "No complete TTM row" in caveat["message"]
+    assert "not treated as zero" in caveat["message"]
+
+
+def test_normalized_foreign_filer_is_degraded_not_withheld(home):
+    from tests.conftest import FakeClient
+    profile = {"cik": 1, "name": "Arm Holdings plc", "sic": "3674",
+               "sic_description": "Semiconductors", "exchanges": ["Nasdaq"],
+               "latest_report": None,
+               "latest_foreign_report": {"form": "20-F", "filed": "2026-06-24",
+                                           "period": "2026-03-31"}}
+    run = run_mod.analyze("ARM", AS_OF, client=FakeClient(profile=profile), save=False)
+    caveat = next(c for c in run["evidence"]["caveats"] if c["code"] == "foreign_filer_normalized")
+    assert caveat["severity"] == "degrade"
+    assert run["evidence"]["quality_score"] > 0
+    assert run["verdicts"]["long_term"]["quality_state"] != "WITHHELD"

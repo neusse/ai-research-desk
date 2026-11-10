@@ -25,7 +25,7 @@ FAMILIES = ("quality", "growth", "valuation", "momentum",
 WINDOWS = ("1m", "3m", "6m", "12m")
 
 from edgedesk.reports.scorecard import SWING_NOTE  # one sentence, every format
-from edgedesk.reports.common import partial_label
+from edgedesk.reports.common import foreign_filer_methodology, partial_label
 
 
 def _e(v) -> str:
@@ -60,6 +60,7 @@ def render(run: dict) -> str:
 
     body = [
         _head(run, ev, profile, anchors, name),
+        _methodology(ev),
         _horizon(run, "swing"),
         _horizon(run, "long_term"),
         longterm_block.html(run) if run.get("long_term") else "",
@@ -72,6 +73,11 @@ def render(run: dict) -> str:
     ]
     return _PAGE.format(title=_e(f"{run['ticker']} scorecard"),
                         css=_CSS, body="\n".join(b for b in body if b))
+
+
+def _methodology(ev: dict) -> str:
+    note = foreign_filer_methodology(ev)
+    return "" if not note else f'<div class="cav degrade method"><b>{_e(note)}</b></div>'
 
 
 # ---------------------------------------------------------------------------

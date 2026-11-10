@@ -19,7 +19,7 @@ from edgedesk.reports import longterm_block, research_block, swing_block
 from edgedesk.reports.scorecard import SWING_NOTE
 from edgedesk.reports.common import partial_label
 from edgedesk.reports.common import (
-    HORIZON_ORDER, WINDOWS, family_signals, money, num, pct, pct0, price,
+    HORIZON_ORDER, WINDOWS, family_signals, foreign_filer_methodology, money, num, pct, pct0, price,
     rating_line, signal_value, strongest_signals, top_contributors,
 )
 
@@ -40,6 +40,9 @@ def render(run: dict) -> str:
         f"{_dividend(ev)}{_mktcap(ev)}",
         "",
     ]
+    method = foreign_filer_methodology(ev)
+    if method:
+        out += [f"**Methodology annotation: {method}**", ""]
     out += _verdicts(run)
     if run.get("long_term"):
         out += longterm_block.markdown(run)

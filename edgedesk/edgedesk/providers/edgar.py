@@ -17,8 +17,10 @@ tolerates 52/53-week fiscal calendars through day-count windows.
 Known approximations, all documented where they happen: total debt is summed
 from the common debt tags; multi-class filers (Visa, Alphabet) report share
 counts only per class, so shares fall back to net income / diluted EPS and then
-to the annual public float / that day's price; foreign filers (20-F/40-F) have
-no quarterly periods, so they get no rows and the LLM analysts abstain.
+to the annual public float / that day's price. Foreign filers using standard
+US-GAAP tags are normalized from annual 20-F/40-F and financial 6-K facts; a
+6-K creates a period only when it contains a core statement fact, so ordinary
+news and shareholder-communication 6-Ks do not become financial quarters.
 """
 
 from __future__ import annotations
@@ -56,8 +58,12 @@ _CIK_LOCK = threading.Lock()
 # A period exists once one of these is filed. Proxy and registration
 # statements repeat old figures months later; counting them would re-date
 # facts that were public long before.
-_REPORT_FORMS = {"10-Q", "10-K", "10-QT", "10-KT"}
-_VALUE_FORMS = _REPORT_FORMS | {"10-Q/A", "10-K/A", "10-QT/A", "10-KT/A"}
+_DOMESTIC_REPORT_FORMS = {"10-Q", "10-K", "10-QT", "10-KT"}
+_FOREIGN_REPORT_FORMS = {"20-F", "40-F"}
+_FOREIGN_INTERIM_FORMS = {"6-K"}
+_REPORT_FORMS = _DOMESTIC_REPORT_FORMS | _FOREIGN_REPORT_FORMS | _FOREIGN_INTERIM_FORMS
+_INDEX_REPORT_FORMS = _DOMESTIC_REPORT_FORMS | _FOREIGN_REPORT_FORMS
+_VALUE_FORMS = _REPORT_FORMS | {f"{form}/A" for form in _REPORT_FORMS}
 
 _ANNUAL_DAYS = (350, 380)
 _YTD_DAYS = (80, 290)
@@ -517,13 +523,12 @@ def _to_metrics(ticker: str, period: ReportPeriod, r: dict, prev: dict | None,
     )
 
 
-def _latest_report(submissions: dict) -> dict | None:
-    """The newest 10-Q/10-K on the SEC filing index. The companyfacts feed can
-    lag the index by weeks; comparing the two is how staleness is detected."""
+def _latest_report(submissions: dict, forms: set[str] = _INDEX_REPORT_FORMS) -> dict | None:
+    """The newest requested report form on the SEC filing index."""
     recent = (submissions.get("filings") or {}).get("recent") or {}
     for form, filed, period in zip(recent.get("form", []), recent.get("filingDate", []),
                                    recent.get("reportDate", [])):
-        if form in _REPORT_FORMS:
+        if form in forms:
             return {"form": form, "filed": filed, "period": period}
     return None
 
@@ -602,6 +607,7 @@ class EdgarClient:
                 "location": ", ".join(x for x in (business.get("city"),
                                                   business.get("stateOrCountry")) if x) or None,
                 "latest_report": _latest_report(body),
+                "latest_foreign_report": _latest_report(body, _FOREIGN_REPORT_FORMS),
             }
         _PROFILES.put(cik, profile)
         return profile

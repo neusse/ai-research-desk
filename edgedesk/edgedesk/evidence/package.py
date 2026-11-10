@@ -210,13 +210,17 @@ def _point_in_time_profile(profile: dict, as_of: str) -> dict:
     date would put a fact from the future inside a historical run, where the
     freshness check and the event check both read it. It is dropped instead.
     """
-    report = profile.get("latest_report") or {}
+    result = dict(profile)
+    report = result.get("latest_report") or {}
     if report and (report.get("filed") or "") > as_of:
-        return {**profile, "latest_report": None,
-                "latest_report_note": (
-                    f"The newest filing on the SEC index was filed {report.get('filed')}, "
-                    f"after this run's as-of date, so it was excluded.")}
-    return profile
+        result["latest_report"] = None
+        result["latest_report_note"] = (
+            f"The newest filing on the SEC index was filed {report.get('filed')}, "
+            f"after this run's as-of date, so it was excluded.")
+    foreign = result.get("latest_foreign_report") or {}
+    if foreign and (foreign.get("filed") or "") > as_of:
+        result["latest_foreign_report"] = None
+    return result
 
 
 def _collect_market(ev: Evidence, as_of: date, client: DataClient) -> None:
@@ -330,13 +334,27 @@ def _collect_fundamentals(ev: Evidence, as_of: date, client: DataClient) -> None
         ev.warn("no_fundamentals", WITHHOLD, f"EDGAR fundamentals failed: {exc}")
         return
     if not rows:
-        ev.warn("no_gaap_fundamentals", WITHHOLD,
-                "SEC EDGAR has no US GAAP quarterly facts for this filer (IFRS 20-F "
-                "or 40-F filers report annually in a different taxonomy), so no "
-                "fundamental factor can be computed.")
+        foreign = (ev.profile or {}).get("latest_foreign_report") or {}
+        if foreign:
+            detail = (f"SEC identifies this as a foreign filer; its latest annual report is a "
+                      f"{foreign.get('form')} filed {foreign.get('filed')}. No complete TTM row "
+                      "could be normalized from its standard US GAAP 20-F/6-K facts. The filing "
+                      "may use unsupported tags or an IFRS-only taxonomy; missing values were not "
+                      "treated as zero.")
+        else:
+            detail = ("SEC EDGAR returned no usable US GAAP quarterly facts. This can mean a "
+                      "foreign 20-F/40-F filer, a newly listed company, or incomplete XBRL. "
+                      "Edge Desk withheld fundamentals rather than treating missing facts as zero.")
+        ev.warn("no_gaap_fundamentals", WITHHOLD, detail)
         return
 
     ev.metrics = [r.model_dump() for r in rows]
+    foreign = (ev.profile or {}).get("latest_foreign_report") or {}
+    if foreign:
+        ev.warn("foreign_filer_normalized", DEGRADE,
+                f"Fundamentals were normalized from standard US GAAP facts in "
+                f"{foreign.get('form')} and financial 6-K filings. Interim 6-K disclosure is less "
+                "uniform than a 10-Q, so the rating is allowed at reduced data confidence.")
     latest = ev.metrics[0]
     _check_freshness(ev, latest)
     _check_shares(ev, latest)

@@ -18,7 +18,7 @@ from edgedesk.reports.scorecard import SWING_NOTE
 from edgedesk.reports.common import partial_label
 from edgedesk.reports.common import (
     FAMILY_ORDER, HORIZON_ORDER, WINDOWS, fact_value, money, num, pct, pct0, price,
-    rating_line, signal_value,
+    foreign_filer_methodology, rating_line, signal_value,
 )
 
 
@@ -36,6 +36,9 @@ def render(run: dict) -> str:
         f"As of **{run['as_of']}**, generated {run['generated_at']}.",
         "",
     ]
+    method = foreign_filer_methodology(ev)
+    if method:
+        out += ["## Methodology annotation", "", f"**{method}**", ""]
     out += _summary(run)
     out += _verdict_detail(run)
     if run.get("long_term"):
