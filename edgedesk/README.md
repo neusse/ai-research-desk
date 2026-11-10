@@ -115,7 +115,9 @@ historically calibrated. Distribution yield is shown only when a reliable source
 exists and is never rewarded as investment return; the model does not claim to
 measure distribution sustainability. Historical ETF runs exclude today's fund
 snapshot, and bond, commodity, cash and multi-asset ETFs remain `WITHHELD` until
-they have appropriate benchmarks and factor curves.
+they have appropriate benchmarks and factor curves. ETF conviction is capped at
+Low while the screen is unmeasured. The stock swing strategy abstains on ETFs
+because its backtest does not cover them.
 
 **Risk points one way.** Higher always means more risk, and risk never enters
 the rating: it shapes conviction and the levels.

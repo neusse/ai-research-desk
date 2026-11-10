@@ -81,6 +81,9 @@ def test_equity_etf_gets_separate_publishable_ratings(etf_run):
     assert etf_run["versions"]["factors"] == "etf-1.0.0"
     assert etf_run["calibration"]["long_term"]["standing"] == "not measured"
     assert "ETF formula" in etf_run["calibration"]["long_term"]["summary"]
+    assert etf_run["verdicts"]["long_term"]["conviction"] == "Low"
+    assert etf_run["swing"]["call"] is None
+    assert "not been tested on ETFs" in etf_run["swing"]["why"]
 
 
 @pytest.mark.parametrize("fmt", ("scorecard", "condensed", "full", "card"))

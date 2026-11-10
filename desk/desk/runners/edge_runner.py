@@ -137,6 +137,9 @@ def main() -> None:
     run_mod.write(run)
 
     llm = run.get("llm") or {}
+    if not llm.get("ok") and not llm.get("usage_limited"):
+        raise SystemExit("Edge Desk written analysis was unavailable: "
+                         + str(llm.get("error") or "no successful synthesis"))
     if llm.get("usage_limited"):
         # Exit without writing the report: a half-written analysis must not be reused later today.
         raise SystemExit(f"The {'ChatGPT' if _plan() == 'chatgpt' else 'Claude'} plan stopped Edge Desk's written analysis "

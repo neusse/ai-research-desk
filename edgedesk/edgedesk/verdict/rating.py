@@ -186,7 +186,7 @@ def rate(ev: Evidence, families: dict[str, Family], horizon: str,
                        action="No action: rating withheld", methodology=methodology)
 
     rating = band_for(score)
-    conviction = _conviction(score, coverage, risk_score, families, weights)
+    conviction = "Low" if is_etf else _conviction(score, coverage, risk_score, families, weights)
     return Verdict(horizon=horizon, label=spec["label"], score=score, rating=rating,
                    quality_state=state, conviction=conviction, coverage=coverage,
                    risk_score=risk_score, contributions=contributions, reasons=reasons,
