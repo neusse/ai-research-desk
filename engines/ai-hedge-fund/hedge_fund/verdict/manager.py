@@ -162,6 +162,12 @@ def add_verdicts(
             "data_caveats": _caveats(data_client, ticker, record.as_of),
             "headlines": _headlines(data_client, ticker, record.as_of) if manager else [],
         })
+        if base.desk_score is None:
+            return base.model_copy(update={
+                "data_caveats": [*base.data_caveats,
+                                 "All analysts abstained or had no view. Veterans cannot publish "
+                                 "a rating without an evidence based analyst call."],
+            })
         if manager is None:
             return base
         return manager.review(record, ticker, base, _fundamentals(data_client, ticker, record.as_of))

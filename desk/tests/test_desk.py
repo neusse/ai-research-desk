@@ -242,6 +242,19 @@ def test_markdown_and_vault_note_render_without_dashes():
     assert chr(0x2014) not in md and chr(0x2013) not in md  # no em or en dashes
 
 
+def test_veterans_all_abstain_is_shown_as_withheld():
+    _, aihf = _engines(aihf=None)
+    aihf["verdict"].update(rating=None, confidence=None, summary="", desk_score=None,
+                           desk_rating=None, data_caveats=["All analysts abstained or had no view."])
+    bundle = {"ticker": "JEPQ", "date": "2026-11-10", "owns": False, "horizons": {},
+              "native": native_views({"B": aihf}), "ai_hedge_fund": aihf,
+              "costs": {"ai_hedge_fund": 0, "desk": 0, "total": 0},
+              "files": {"json": "JEPQ-2026-11-10.json"}}
+    md = markdown(bundle)
+    assert "| ai-hedge-fund | Withheld | All analysts abstained or had no view. |" in md
+    assert "None (n/a)" not in md
+
+
 def test_cli_reports_are_reused_with_their_rating(tmp_path: Path):
     (tmp_path / "final_trade_decision.md").write_text("**Rating**: Hold\n\nbody", encoding="utf-8")
     payload = load_cli_reports("ECG", "2026-09-15", tmp_path)

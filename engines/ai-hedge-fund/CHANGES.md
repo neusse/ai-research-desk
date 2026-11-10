@@ -8,7 +8,8 @@ This folder is a snapshot of [virattt/ai-hedge-fund](https://github.com/virattt/
   (SIP, then IEX, then Yahoo with no keys), Yahoo analyst consensus. Missed splits are repaired;
   convertible notes count as debt; a missing capex figure is unknown, not zero.
 - **Verdicts** (`hedge_fund/verdict/`): a per-ticker desk rating from the analysts' votes and a
-  research manager's written view, with data caveats such as stale fundamentals.
+  research manager's written view, with data caveats such as stale fundamentals. If every analyst
+  abstains, the manager withholds the rating instead of inventing a Hold from missing evidence.
 - **Caching:** entries reaching today expire after six hours, so new filings are seen.
 - **Strategy:** `street-consensus`.
 - **Persona answers that are not clean JSON** are still read: a lenient decoder (raw line breaks,

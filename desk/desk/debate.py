@@ -154,11 +154,12 @@ def reports_block(ticker: str, as_of: str, reports: dict[str, dict], shared: dic
     if aihf:
         v = aihf["verdict"]
         parts += [
-            "", f"=== DESK B: ai-hedge-fund   RATING: {aihf['rating']} ===",
+            "", f"=== DESK B: ai-hedge-fund   RATING: {aihf.get('rating') or 'Withheld'} ===",
             "(Investor-persona analysts over SEC filings, post-earnings drift, Street consensus;",
             " research manager verdict. The desk did not target a specific horizon.)",
             "", "--- Research manager verdict ---",
-            f"Rating {v.get('rating')} at {v.get('confidence')}% confidence; mechanical desk score "
+            f"Rating {v.get('rating') or 'Withheld'} at "
+            f"{str(v['confidence']) + '%' if v.get('confidence') is not None else 'n/a'} confidence; mechanical desk score "
             f"{v.get('desk_score')} ({v.get('desk_rating')}).",
             f"Summary: {v.get('summary') or ''}",
             f"Thesis: {v.get('thesis') or ''}",

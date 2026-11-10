@@ -75,6 +75,8 @@ Keys live in `~/.hedge-desk/.env` on your machine, which is never committed. Do 
   what did not survive, and writes the memo. A 2 against 1 standoff is reported as gridlock, not
   decided for you.
 - **Data checks**: one settled close for every team, a stale-filing rule, unknown values kept unknown.
+  Veterans withholds its rating when every analyst abstains. Its company-filing personas do not
+  provide an ETF assessment; use Edge Desk's annotated fund analysis for ETF runs.
 - **The dashboard**: start a run, watch the teams work live, reopen any past run (a team report from
   earlier the same day is reused only if it came from the same plan, price session, models, fund and
   code), a weekly review of

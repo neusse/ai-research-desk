@@ -155,7 +155,7 @@ def _ai_hedge_fund(ticker: str, as_of: str, mandate: str, wanted: dict, ctx: dic
                    plan=ctx["plan"])
     payload = _stamp(out, payload, wanted)
     events.emit("engine_done", engine="value", rating=payload["rating"],
-                text=f"Research Manager: {payload['rating']}")
+                text=f"Research Manager: {payload['rating'] or 'rating withheld'}")
     return payload
 
 
