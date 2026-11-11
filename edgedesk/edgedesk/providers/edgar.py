@@ -62,6 +62,7 @@ _DOMESTIC_REPORT_FORMS = {"10-Q", "10-K", "10-QT", "10-KT"}
 _FOREIGN_REPORT_FORMS = {"20-F", "40-F"}
 _FOREIGN_INTERIM_FORMS = {"6-K"}
 _REPORT_FORMS = _DOMESTIC_REPORT_FORMS | _FOREIGN_REPORT_FORMS | _FOREIGN_INTERIM_FORMS
+_INDEX_REPORT_FORMS = _DOMESTIC_REPORT_FORMS | _FOREIGN_REPORT_FORMS
 _VALUE_FORMS = _REPORT_FORMS | {f"{form}/A" for form in _REPORT_FORMS}
 
 _ANNUAL_DAYS = (350, 380)
@@ -439,6 +440,28 @@ def _shares_from_float(company: Company, period: ReportPeriod, as_of: date,
     return latest.val / price * split_factor(latest.end, period.filed)
 
 
+def implied_ads_price_ratio(company: Company, as_of: date,
+                            price_on: Callable[[date], float | None]) -> float | None:
+    """Public float per ordinary share divided by the traded price on that date.
+
+    A foreign filer's cover count is ordinary shares, while its quote may be per
+    ADS. Use only float and cover facts from the same filing that were public by
+    as_of; a missing pair cannot establish the share basis.
+    """
+    floats = [f for f in company.public_float if f.filed <= as_of and f.end <= as_of]
+    if not floats:
+        return None
+    latest = max(floats, key=lambda f: (f.end, f.filed))
+    if (as_of - latest.end).days > _FLOAT_MAX_AGE_DAYS:
+        return None
+    covers = [f for f in company.cover_shares
+              if f.accn == latest.accn and f.filed <= as_of and f.val > 0]
+    if len(covers) != 1:
+        return None
+    price = price_on(latest.end)
+    return latest.val / covers[0].val / price if price and price > 0 and latest.val > 0 else None
+
+
 def _year_earlier(ends, end: date) -> date | None:
     target = end - timedelta(days=365)
     candidates = [e for e in ends if abs((e - target).days) <= _TOLERANCE_DAYS]
@@ -522,7 +545,7 @@ def _to_metrics(ticker: str, period: ReportPeriod, r: dict, prev: dict | None,
     )
 
 
-def _latest_report(submissions: dict, forms: set[str] = _REPORT_FORMS) -> dict | None:
+def _latest_report(submissions: dict, forms: set[str] = _INDEX_REPORT_FORMS) -> dict | None:
     """The newest requested report form on the SEC filing index."""
     recent = (submissions.get("filings") or {}).get("recent") or {}
     for form, filed, period in zip(recent.get("form", []), recent.get("filingDate", []),

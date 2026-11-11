@@ -11,7 +11,8 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 from edgedesk.evidence.package import collect
-from edgedesk.providers.edgar import (Company, Fact, ReportPeriod, build_metrics,
+from edgedesk.providers.edgar import (Company, Fact, ReportPeriod, _latest_report, build_metrics,
+                                      implied_ads_price_ratio,
                                       parse_companyfacts, pit_values)
 from tests.conftest import FakeClient, make_bars, make_metrics
 
@@ -96,6 +97,28 @@ def test_us_gaap_foreign_filer_builds_ttm_from_20f_and_financial_6k():
     assert rows[0].filing_date == "2026-11-04"
 
 
+def test_foreign_share_basis_uses_same_filing_and_float_date_close():
+    measured = date(2026, 3, 31)
+    filed = date(2026, 5, 26)
+    cover = Fact(None, measured, 1_000, filed, "20-F", "annual")
+
+    def company(float_value):
+        return Company(cik=1, cover_shares=[cover],
+                       public_float=[Fact(None, measured, float_value, filed, "20-F", "annual")])
+
+    assert implied_ads_price_ratio(company(100_000), filed, lambda day: 100.0) == 1.0
+    assert implied_ads_price_ratio(company(20_000), filed, lambda day: 100.0) == 0.2
+    assert implied_ads_price_ratio(company(100_000), date(2026, 5, 25), lambda day: 100.0) is None
+    assert implied_ads_price_ratio(Company(cik=1, cover_shares=[cover]), filed,
+                                   lambda day: 100.0) is None
+    assert implied_ads_price_ratio(company(100_000), filed, lambda day: None) is None
+    newer_unmatched = Fact(None, date(2026, 4, 30), 100_000,
+                           date(2026, 6, 1), "20-F", "other-filing")
+    with_newer = company(100_000)
+    with_newer.public_float.append(newer_unmatched)
+    assert implied_ads_price_ratio(with_newer, date(2026, 6, 1), lambda day: 100.0) is None
+
+
 def test_restatement_is_visible_once_filed():
     """A restated figure is real information the day it becomes public, so the
     later filing wins from that date on and not before."""
@@ -140,6 +163,30 @@ def test_a_filing_index_entry_from_the_future_is_dropped():
 def test_a_current_run_keeps_the_filing_index_entry(as_of):
     ev = collect("TEST", as_of, FakeClient())
     assert (ev.profile or {}).get("latest_report", {}).get("filed") == "2026-07-29"
+
+
+def test_future_foreign_report_metadata_is_dropped_from_historical_run():
+    profile = {
+        "cik": 1, "name": "Foreign Test", "sic": "3674", "exchanges": ["Nasdaq"],
+        "latest_report": {"form": "20-F", "filed": "2026-07-29", "period": "2026-03-31"},
+        "latest_foreign_report": {
+            "form": "20-F", "filed": "2026-07-29", "period": "2026-03-31",
+        },
+    }
+    ev = collect("TEST", date(2026, 6, 30), FakeClient(profile=profile))
+    assert (ev.profile or {}).get("latest_report") is None
+    assert (ev.profile or {}).get("latest_foreign_report") is None
+
+
+def test_latest_index_report_ignores_ordinary_6k():
+    recent = {
+        "form": ["6-K", "20-F"],
+        "filingDate": ["2026-11-06", "2026-06-24"],
+        "reportDate": ["2026-10-01", "2026-03-31"],
+    }
+    assert _latest_report({"filings": {"recent": recent}}) == {
+        "form": "20-F", "filed": "2026-06-24", "period": "2026-03-31",
+    }
 
 
 # ---------------------------------------------------------------------------

@@ -54,13 +54,14 @@ class FakeClient:
     so the point-in-time test can prove nothing later than `as_of` was asked for."""
 
     def __init__(self, bars=None, metrics=None, consensus=True, news=True,
-                 release=True, profile=None, fund=None):
+                 release=True, profile=None, fund=None, ads_ratio=None):
         self._bars = bars if bars is not None else make_bars(400)
         self._metrics = metrics if metrics is not None else [make_metrics()]
         self._consensus = consensus
         self._news = news
         self._release = release
         self._fund = fund
+        self._ads_ratio = ads_ratio
         self._profile = profile if profile is not None else {
             "cik": 1, "name": "Test Corp", "sic": "3674",
             "sic_description": "Semiconductors", "exchanges": ["Nasdaq"],
@@ -98,6 +99,10 @@ class FakeClient:
 
     def fund_data(self, ticker):
         return dict(self._fund) if self._fund is not None else None
+
+    def ads_price_ratio(self, ticker, as_of):
+        self.requested_ends.append(as_of)
+        return self._ads_ratio
 
     def consensus(self, ticker):
         if not self._consensus:

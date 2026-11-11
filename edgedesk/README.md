@@ -109,7 +109,13 @@ publish standard US GAAP facts are normalized from annual 20-F/40-F and
 financial 6-K filings; their rating is marked `DEGRADED` because interim 6-K
 disclosure is less uniform than a 10-Q. Every report and the combined desk memo
 show a prominent **Foreign-filer normalization used** methodology annotation
-when this path is active. IFRS-only taxonomies remain withheld.
+when this path is active. A foreign ADS quote is checked against filed public
+float and ordinary-share count; if the ratio cannot be confirmed, the rating is
+withheld. IFRS-only taxonomies remain withheld. Foreign-filer freshness checks
+cover the annual report only: the SEC filing index does not identify which 6-Ks
+contain financial statements, so a new interim 6-K cannot trigger a rerun or
+expose a lagging companyfacts feed. Semiannual-only filers can have a TTM row
+about six months older than a quarterly filer.
 
 **Equity ETFs use a different methodology.** An ETF is detected from Yahoo's
 security type and is not sent through the company GAAP gate. Current equity ETFs
