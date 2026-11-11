@@ -6,7 +6,8 @@ from pathlib import Path
 import pytest
 
 from desk.debate import DebateResult, Turn, reports_block, run_debate
-from desk.engines import load_cli_reports
+from desk import DeskError
+from desk.engines import _load, load_cli_reports
 from desk.horizons import action_for
 from desk.levels import compute_anchors
 from desk.memo import outcome
@@ -253,6 +254,21 @@ def test_veterans_all_abstain_is_shown_as_withheld():
     md = markdown(bundle)
     assert "| ai-hedge-fund | Withheld | All analysts abstained or had no view. |" in md
     assert "None (n/a)" not in md
+
+
+def test_veterans_abstention_is_a_valid_report_but_a_missing_rating_is_not(tmp_path: Path):
+    _, report = _engines(aihf=None)
+    report["verdict"].update(rating=None, desk_rating=None, desk_score=None)
+    report["personas"] = [{"model": "graham", "call": "abstained"},
+                          {"model": "pead", "call": "no view"}]
+    path = tmp_path / "ai-hedge-fund.json"
+    path.write_text(json.dumps(report), encoding="utf-8")
+    assert _load(path, allow_no_rating=True)["rating"] is None
+
+    report["personas"][0]["call"] = "bullish"
+    path.write_text(json.dumps(report), encoding="utf-8")
+    with pytest.raises(DeskError, match="no usable rating"):
+        _load(path, allow_no_rating=True)
 
 
 def test_cli_reports_are_reused_with_their_rating(tmp_path: Path):
