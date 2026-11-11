@@ -6,7 +6,8 @@ from pathlib import Path
 import pytest
 
 from desk.debate import DebateResult, Turn, reports_block, run_debate
-from desk.engines import load_cli_reports
+from desk import DeskError
+from desk.engines import _load, load_cli_reports
 from desk.horizons import action_for
 from desk.levels import compute_anchors
 from desk.memo import outcome
@@ -242,6 +243,34 @@ def test_markdown_and_vault_note_render_without_dashes():
     assert chr(0x2014) not in md and chr(0x2013) not in md  # no em or en dashes
 
 
+def test_veterans_all_abstain_is_shown_as_withheld():
+    _, aihf = _engines(aihf=None)
+    aihf["verdict"].update(rating=None, confidence=None, summary="", desk_score=None,
+                           desk_rating=None, data_caveats=["All analysts abstained or had no view."])
+    bundle = {"ticker": "JEPQ", "date": "2026-11-10", "owns": False, "horizons": {},
+              "native": native_views({"B": aihf}), "ai_hedge_fund": aihf,
+              "costs": {"ai_hedge_fund": 0, "desk": 0, "total": 0},
+              "files": {"json": "JEPQ-2026-11-10.json"}}
+    md = markdown(bundle)
+    assert "| ai-hedge-fund | Withheld | All analysts abstained or had no view. |" in md
+    assert "None (n/a)" not in md
+
+
+def test_veterans_abstention_is_a_valid_report_but_a_missing_rating_is_not(tmp_path: Path):
+    _, report = _engines(aihf=None)
+    report["verdict"].update(rating=None, desk_rating=None, desk_score=None)
+    report["personas"] = [{"model": "graham", "call": "abstained"},
+                          {"model": "pead", "call": "no view"}]
+    path = tmp_path / "ai-hedge-fund.json"
+    path.write_text(json.dumps(report), encoding="utf-8")
+    assert _load(path, allow_no_rating=True)["rating"] is None
+
+    report["personas"][0]["call"] = "bullish"
+    path.write_text(json.dumps(report), encoding="utf-8")
+    with pytest.raises(DeskError, match="no usable rating"):
+        _load(path, allow_no_rating=True)
+
+
 def test_cli_reports_are_reused_with_their_rating(tmp_path: Path):
     (tmp_path / "final_trade_decision.md").write_text("**Rating**: Hold\n\nbody", encoding="utf-8")
     payload = load_cli_reports("ECG", "2026-09-15", tmp_path)
@@ -326,6 +355,19 @@ def test_reports_mode_memo_lists_each_engine_without_a_combined_rating():
     md = markdown(bundle)
     assert "# ECG desk reports" in md and "without a debate" in md and "| Edge Desk | Underweight (37.4/100)" in md
     assert "ai-hedge-fund" not in md.split("## Desk reports")[1].split("---")[0]
+
+
+def test_desk_memo_preserves_edge_methodology_annotations():
+    edge = {**_edge(), "methodology": ("Foreign-filer normalization used. Standard US GAAP facts from the "
+                                        "issuer's annual 20-F and financial 6-K filings were converted into "
+                                        "point-in-time TTM periods.")}
+    bundle = {"ticker": "ARM", "date": "2026-11-10", "owns": False, "horizons": {}, "mode": "reports",
+              "tradingagents": None, "ai_hedge_fund": None, "edge_desk": edge,
+              "costs": {"edge_desk": 0, "desk": 0, "total": 0, "billing": "max"},
+              "files": {"json": "x.json"}}
+    md = markdown(bundle)
+    assert "## Methodology annotation" in md
+    assert "annual 20-F and financial 6-K" in md
 
 
 def test_withdrawn_needs_the_owner_to_have_conceded_in_that_round():

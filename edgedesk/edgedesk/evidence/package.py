@@ -90,6 +90,7 @@ class Evidence:
     breakdown: dict | None = None
     calendar: dict | None = None
     dividend: dict | None = None
+    fund: dict | None = None
     release: dict | None = None
     news: list[dict] = field(default_factory=list)
     caveats: list[Caveat] = field(default_factory=list)
@@ -150,6 +151,7 @@ class Evidence:
             "breakdown": self.breakdown,
             "calendar": self.calendar,
             "dividend": self.dividend,
+            "fund": self.fund,
             "release": self.release,
             "news": self.news,
             "facts": {k: asdict(v) for k, v in sorted(self.facts.items())},
@@ -175,6 +177,7 @@ def collect(ticker: str, as_of: date, client: DataClient) -> Evidence:
     )
     _collect_profile(ev, client)
     _collect_market(ev, as_of, client)
+    _collect_fund(ev, client)
     _collect_fundamentals(ev, as_of, client)
     _collect_estimates(ev, client)
     _collect_events(ev, as_of, client)
@@ -196,7 +199,7 @@ def _collect_profile(ev: Evidence, client: DataClient) -> None:
                 f"{profile.get('sic')} would place it elsewhere" if overridden
                 else f"mapped from SIC {profile.get('sic')}, benchmark {etf}")
         ev.add(Fact("pro.sector", "Sector", sector, "text", "computed", ev.as_of, note=note))
-    else:
+    elif profile.get("security_type") != "ETF":
         ev.warn("no_sector", INFO,
                 "No sector could be mapped from the SIC code; relative strength "
                 "is measured against the market only.")
@@ -228,9 +231,10 @@ def _collect_market(ev: Evidence, as_of: date, client: DataClient) -> None:
         return
     source = getattr(getattr(client, "alpaca", None), "source", None)
     if source == "yahoo":
+        from edgedesk.providers.alpaca import credential_help
         ev.warn("prices_from_yahoo", INFO,
-                "No Alpaca keys: prices come from Yahoo, and there is no Benzinga news, so the "
-                "news-based sentiment and headline read have nothing to work from.")
+                "No complete Alpaca credential pair was found, so prices come from Yahoo and "
+                "Benzinga news is unavailable. Checked: " + credential_help() + ".")
     elif source == "alpaca-iex":
         ev.warn("prices_from_iex", INFO,
                 "Prices come from Alpaca's IEX feed (this account has no SIP data): volume is a "
@@ -324,19 +328,35 @@ def _collect_relative(ev: Evidence, as_of: date, client: DataClient) -> None:
 
 
 def _collect_fundamentals(ev: Evidence, as_of: date, client: DataClient) -> None:
+    if (ev.profile or {}).get("security_type") == "ETF":
+        return
     try:
         rows = client.metrics(ev.ticker, as_of, limit=12)
     except Exception as exc:                       # noqa: BLE001
         ev.warn("no_fundamentals", WITHHOLD, f"EDGAR fundamentals failed: {exc}")
         return
     if not rows:
-        ev.warn("no_gaap_fundamentals", WITHHOLD,
-                "SEC EDGAR has no US GAAP quarterly facts for this filer (IFRS 20-F "
-                "or 40-F filers report annually in a different taxonomy), so no "
-                "fundamental factor can be computed.")
+        foreign = (ev.profile or {}).get("latest_foreign_report") or {}
+        if foreign:
+            detail = (f"SEC identifies this as a foreign filer; its latest annual report is a "
+                      f"{foreign.get('form')} filed {foreign.get('filed')}. No complete TTM row "
+                      "could be normalized from its standard US GAAP 20-F/6-K facts. The filing "
+                      "may use unsupported tags or an IFRS-only taxonomy; missing values were not "
+                      "treated as zero.")
+        else:
+            detail = ("SEC EDGAR returned no usable US GAAP quarterly facts. This can mean a "
+                      "foreign 20-F/40-F filer, a newly listed company, or incomplete XBRL. "
+                      "Edge Desk withheld fundamentals rather than treating missing facts as zero.")
+        ev.warn("no_gaap_fundamentals", WITHHOLD, detail)
         return
 
     ev.metrics = [r.model_dump() for r in rows]
+    foreign = (ev.profile or {}).get("latest_foreign_report") or {}
+    if foreign:
+        ev.warn("foreign_filer_normalized", DEGRADE,
+                f"Fundamentals were normalized from standard US GAAP facts in "
+                f"{foreign.get('form')} and financial 6-K filings. Interim 6-K disclosure is less "
+                "uniform than a 10-Q, so the rating is allowed at reduced data confidence.")
     latest = ev.metrics[0]
     _check_freshness(ev, latest)
     _check_shares(ev, latest)
@@ -376,6 +396,56 @@ def _collect_fundamentals(ev: Evidence, as_of: date, client: DataClient) -> None
     ):
         if latest.get(key) is not None:
             ev.add(Fact(fid, label, latest[key], unit, "edgar", stamp, note=note))
+
+
+def _collect_fund(ev: Evidence, client: DataClient) -> None:
+    """Collect current fund structure for ETFs; company accounts do not apply."""
+    if (ev.profile or {}).get("security_type") != "ETF":
+        return
+    if ev.is_historical:
+        ev.warn("fund_data_excluded", INFO,
+                "Current ETF holdings and fee data were excluded from this historical run "
+                "because the free source has no point-in-time history.")
+        return
+    try:
+        fund = client.fund_data(ev.ticker)
+    except Exception as exc:                       # noqa: BLE001
+        ev.warn("no_fund_data", WITHHOLD, f"ETF structure data could not be fetched: {exc}")
+        return
+    if not fund:
+        ev.warn("no_fund_data", WITHHOLD,
+                "The security is an ETF, but no fund structure data were available; a company "
+                "fundamentals rating would be the wrong substitute.")
+        return
+    ev.fund = fund
+    stock = fund.get("stock_position")
+    if stock is None or stock < 0.50:
+        ev.warn("unsupported_etf_type", WITHHOLD,
+                "This ETF is not primarily an equity fund. Edge Desk's ETF model currently "
+                "supports equity ETFs only; bond, commodity, cash and multi-asset funds need "
+                "different benchmarks and risk factors.")
+        return
+    ev.warn("etf_methodology", DEGRADE,
+            "ETF methodology used: the rating is based on fund structure, fees, concentration, "
+            "market trend and performance relative to SPY. Company GAAP fundamentals do not "
+            "apply. This model does not assess distribution sustainability or treat a high "
+            "distribution rate as investment return.")
+    top = fund.get("top_holdings") or []
+    top_weight = sum((h.get("weight") or 0.0) for h in top)
+    stamp = fund.get("as_of") or ev.as_of
+    for fid, label, value, unit in (
+        ("fund.expense_ratio", "Expense ratio", fund.get("expense_ratio"), "pct"),
+        ("fund.category_expense_ratio", "Category-average expense ratio",
+         fund.get("category_expense_ratio"), "pct"),
+        ("fund.total_assets", "Fund net assets", fund.get("total_assets"), "usd"),
+        ("fund.nav_price", "Net asset value", fund.get("nav_price"), "price"),
+        ("fund.premium_discount", "Market price premium/discount to NAV",
+         fund.get("premium_discount"), "pct"),
+        ("fund.stock_position", "Equity allocation", stock, "pct"),
+        ("fund.top_holdings_weight", "Reported top-holdings concentration", top_weight, "pct"),
+    ):
+        if value is not None:
+            ev.add(Fact(fid, label, value, unit, "yahoo", stamp))
 
 
 def _collect_valuation_now(ev: Evidence, as_of: date, client: DataClient,
@@ -456,6 +526,8 @@ def _collect_estimates(ev: Evidence, client: DataClient) -> None:
     """Consensus is current-only. It describes today, so a historical run must
     not see it at all: applying today's targets to a date two months back is the
     cleanest way to manufacture a result that could never have existed."""
+    if (ev.profile or {}).get("security_type") == "ETF":
+        return
     if ev.is_historical:
         ev.warn("consensus_excluded", INFO,
                 "This run is historical, so current analyst consensus was excluded "
@@ -533,15 +605,25 @@ def _collect_events(ev: Evidence, as_of: date, client: DataClient) -> None:
         ev.news = [n.model_dump() for n in client.news(ev.ticker, as_of, start, limit=40)]
     except Exception as exc:                       # noqa: BLE001
         ev.warn("no_news", INFO, f"News headlines were unavailable: {exc}")
+    if (ev.profile or {}).get("security_type") == "ETF":
+        return
     try:
         release = client.latest_release(ev.ticker, start, as_of)
     except Exception as exc:                       # noqa: BLE001
         logger.info("earnings release lookup failed for %s: %s", ev.ticker, exc)
         release = None
     if release is None:
-        ev.warn("no_release", INFO,
-                "No earnings release headline was found in the last "
-                f"{_NEWS_LOOKBACK_DAYS} days, so the post-earnings drift factor abstains.")
+        alpaca = getattr(client, "alpaca", None)
+        has_news_source = alpaca.has_keys() if alpaca and hasattr(alpaca, "has_keys") else None
+        if has_news_source is False:
+            ev.warn("no_release_source", INFO,
+                    "The earnings-release search was skipped because Alpaca/Benzinga credentials "
+                    "were unavailable. This is not evidence that no release occurred; the "
+                    "post-earnings drift factor abstains.")
+        else:
+            ev.warn("no_release", INFO,
+                    "Alpaca/Benzinga was searched, but no earnings release headline was found in "
+                    f"the last {_NEWS_LOOKBACK_DAYS} days, so the post-earnings drift factor abstains.")
         return
 
     eps_surprise = ((release.eps - release.eps_estimate) / abs(release.eps_estimate)

@@ -20,12 +20,13 @@ RATING_CLASS = {
     "Buy": "buy", "Overweight": "ow", "Hold": "hold",
     "Underweight": "uw", "Sell": "sell",
 }
-FAMILIES = ("quality", "growth", "valuation", "momentum",
+FAMILIES = ("fund", "quality", "growth", "valuation", "momentum",
             "relative_strength", "technical", "earnings", "risk")
 WINDOWS = ("1m", "3m", "6m", "12m")
 
 from edgedesk.reports.scorecard import SWING_NOTE  # one sentence, every format
-from edgedesk.reports.common import partial_label
+from edgedesk.reports.common import (etf_methodology, evidence_basis,
+                                     foreign_filer_methodology, partial_label)
 
 
 def _e(v) -> str:
@@ -60,6 +61,7 @@ def render(run: dict) -> str:
 
     body = [
         _head(run, ev, profile, anchors, name),
+        _methodology(ev),
         _horizon(run, "swing"),
         _horizon(run, "long_term"),
         longterm_block.html(run) if run.get("long_term") else "",
@@ -72,6 +74,11 @@ def render(run: dict) -> str:
     ]
     return _PAGE.format(title=_e(f"{run['ticker']} scorecard"),
                         css=_CSS, body="\n".join(b for b in body if b))
+
+
+def _methodology(ev: dict) -> str:
+    note = foreign_filer_methodology(ev) or etf_methodology(ev)
+    return "" if not note else f'<div class="cav degrade method"><b>{_e(note)}</b></div>'
 
 
 # ---------------------------------------------------------------------------
@@ -361,8 +368,7 @@ def _footer(run, ev) -> str:
         for c in ev.get("caveats") or [])
     return f"""
   <div class="ft">
-    Data quality {ev.get('quality_score')}/100 &middot; {ev.get('bar_count')} daily bars
-    &middot; {len(ev.get('metrics') or [])} filed quarters &middot; run
+    Data quality {ev.get('quality_score')}/100 &middot; {_e(evidence_basis(ev))} &middot; run
     {_e(run.get('content_hash'))} &middot; factors v{_e(run['versions']['factors'])}
     {caveats}
     <div class="disc">Ratings come from an explicit formula; each one's tested

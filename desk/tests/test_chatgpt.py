@@ -15,6 +15,7 @@ def test_roles_map_to_the_strong_and_fast_models():
 
 def test_every_call_is_isolated(monkeypatch, tmp_path):
     monkeypatch.setattr(chatgpt, "codex_exe", lambda: ["codex"])
+    monkeypatch.delenv("DESK_CHATGPT_EFFORT", raising=False)
     cmd = chatgpt.command("gpt-6-luna", "medium", tmp_path, tmp_path / "s.md", tmp_path / "x.json", tmp_path / "o.txt")
     joined = " ".join(cmd)
     for flag in ("--ignore-user-config", "--ignore-rules", "project_doc_max_bytes=0", "model_instructions_file=",
@@ -26,6 +27,31 @@ def test_every_call_is_isolated(monkeypatch, tmp_path):
     monkeypatch.setenv("DESK_CODEX_HOME", str(tmp_path / "home"))
     env = chatgpt.child_env()
     assert "OPENAI_API_KEY" not in env and env["CODEX_HOME"] == str(tmp_path / "home")
+
+
+def test_desk_effort_overrides_an_engines_default(monkeypatch, tmp_path):
+    monkeypatch.setattr(chatgpt, "codex_exe", lambda: ["codex"])
+    monkeypatch.setenv("DESK_CHATGPT_EFFORT", "max")
+    cmd = chatgpt.command("gpt-6.1-sol", "medium", tmp_path, tmp_path / "s.md", None,
+                          tmp_path / "o.txt")
+    joined = " ".join(cmd)
+    assert 'model_reasoning_effort="max"' in joined
+    assert 'model_reasoning_effort="medium"' not in joined
+
+
+def test_role_effort_overrides_only_its_model_lane(monkeypatch, tmp_path):
+    monkeypatch.delenv("DESK_CHATGPT_EFFORT", raising=False)
+    monkeypatch.setenv("DESK_CHATGPT_STRONG_EFFORT", "medium")
+    monkeypatch.setenv("DESK_CHATGPT_FAST_EFFORT", "max")
+    monkeypatch.setattr(chatgpt, "STRONG", "gpt-manager")
+    monkeypatch.setattr(chatgpt, "FAST", "gpt-analyst")
+    files = [tmp_path / n for n in ("system", "schema", "last")]
+
+    strong = " ".join(chatgpt.command(chatgpt.STRONG, "high", tmp_path, *files))
+    fast = " ".join(chatgpt.command(chatgpt.FAST, "high", tmp_path, *files))
+
+    assert 'model_reasoning_effort="medium"' in strong
+    assert 'model_reasoning_effort="max"' in fast
 
 
 def test_a_command_or_tool_in_the_event_stream_is_caught():

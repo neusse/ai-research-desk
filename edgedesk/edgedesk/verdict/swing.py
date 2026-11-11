@@ -434,6 +434,11 @@ def _plan(t: dict, live: list[str] | None = None) -> dict | None:
 def recommend(ev: dict, families: dict, panel: dict | None, bars: list[dict],
               spy_bars: list[dict], owns: bool = False) -> dict:
     """*ev*, *families* and *panel* are the serialized forms stored in the run."""
+    if (ev.get("profile") or {}).get("security_type") == "ETF":
+        return {"version": SWING_VERSION, "call": None, "score": None,
+                "why": "The stock swing setup has not been tested on ETFs; no ETF swing call is published.",
+                "components": [], "blockers": [], "plan": None,
+                "standing": "Not measured for ETFs."}
     t = _technical_snapshot(bars, spy_bars, ev.get("release"))
     if not t:
         return {"version": SWING_VERSION, "call": None, "score": None,

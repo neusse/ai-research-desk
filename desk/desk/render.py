@@ -67,6 +67,9 @@ def markdown(bundle: dict) -> str:
     else:
         out += ["_The engines were run without a debate: each report stands on its own and there is no "
                 "combined rating._", ""]
+    if edge and edge.get("methodology"):
+        out += ["## Methodology annotation", "",
+                f"- **Edge Desk:** {edge['methodology']}", ""]
     out += valuation_section(shared.get("valuation") or {})
 
     for key, h in horizons.items():
@@ -78,8 +81,10 @@ def markdown(bundle: dict) -> str:
         out.append(f"| TradingAgents | {ta['rating']} | {_one_line(ta_summary(ta))} |")
     if aihf:
         v = aihf["verdict"]
-        confidence = f"{v['confidence']:.0f}%" if isinstance(v.get("confidence"), (int, float)) else "n/a"
-        out.append(f"| ai-hedge-fund | {aihf['rating']} ({confidence}) | {_one_line(v.get('summary') or '')} |")
+        rating = aihf.get("rating") or "Withheld"
+        confidence = f" ({v['confidence']:.0f}%)" if rating != "Withheld" and isinstance(v.get("confidence"), (int, float)) else ""
+        reason = v.get("summary") or (v.get("data_caveats") or ["No analyst call was available."])[-1]
+        out.append(f"| ai-hedge-fund | {rating}{confidence} | {_one_line(reason)} |")
     if edge:
         sig = edge.get("swing") or {}
         score = f" ({edge['score']:.1f}/100)" if isinstance(edge.get("score"), (int, float)) else ""

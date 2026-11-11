@@ -35,8 +35,8 @@ CRED_VARS = ("OPENAI_API_KEY", "CODEX_API_KEY")
 # Role -> model. The desk's calls name Claude models (or the "opus" / "sonnet" roles); on this plan
 # the strong role runs on STRONG and every other on FAST. Both are settings, because the model
 # list on a ChatGPT plan changes over time.
-STRONG = os.environ.get("DESK_CHATGPT_STRONG", "gpt-6-astra")
-FAST = os.environ.get("DESK_CHATGPT_FAST", "gpt-6-luna")
+STRONG = os.environ.get("DESK_CHATGPT_STRONG", "gpt-6.1-sol")
+FAST = os.environ.get("DESK_CHATGPT_FAST", "gpt-6.1-sol")
 EFFORTS = {"low", "medium", "high", "xhigh", "max"}
 ALLOWED_ITEMS = {"reasoning", "agent_message"}
 
@@ -94,8 +94,15 @@ def command(model: str, effort: str | None, workdir: Path, system_file: Path,
            "-c", 'web_search="disabled"', "-c", "features.apps=false", "-c", 'approval_policy="never"',
            "--sandbox", "read-only", "--ephemeral", "--skip-git-repo-check", "--json",
            "-m", model, "-C", str(workdir), "-o", str(last_file)]
-    if effort in EFFORTS:
-        cmd += ["-c", f"model_reasoning_effort={json.dumps(effort)}"]
+    # The global override remains the highest-precedence emergency knob. Normally the two model
+    # lanes can use different effort: managers coordinate occasionally, while the many analyst
+    # calls can be tuned independently. Read settings at call time so the dashboard needn't be
+    # restarted after an environment-file reload.
+    lane_effort = (os.environ.get("DESK_CHATGPT_STRONG_EFFORT") if model == STRONG else
+                   os.environ.get("DESK_CHATGPT_FAST_EFFORT") if model == FAST else None)
+    selected_effort = (os.environ.get("DESK_CHATGPT_EFFORT") or lane_effort or effort or "").lower()
+    if selected_effort in EFFORTS:
+        cmd += ["-c", f"model_reasoning_effort={json.dumps(selected_effort)}"]
     if schema_file:
         cmd += ["--output-schema", str(schema_file)]
     return [*cmd, "-"]

@@ -143,7 +143,8 @@ def _tradingagents(ticker: str, as_of: str, wanted: dict, ctx: dict) -> dict:
 def _ai_hedge_fund(ticker: str, as_of: str, mandate: str, wanted: dict, ctx: dict) -> dict:
     run_dir, say, events = ctx["run_dir"], ctx["say"], ctx["events"]
     out = run_dir / "ai-hedge-fund.json"
-    payload = None if ctx["fresh"] else reusable(run_dir, out.name, wanted, "ai-hedge-fund", say)
+    payload = None if ctx["fresh"] else reusable(run_dir, out.name, wanted, "ai-hedge-fund", say,
+                                                  allow_no_rating=True)
     if payload:
         events.emit("engine_reused", engine="value", rating=payload["rating"],
                     text=f"Reusing the report from {payload['reused_from']} (same inputs)")
@@ -152,10 +153,10 @@ def _ai_hedge_fund(ticker: str, as_of: str, mandate: str, wanted: dict, ctx: dic
     events.emit("engine_started", engine="value", text="The veterans are reading the filings")
     payload = _run(AIHF_PYTHON, AIHF_DIR, [RUNNERS_DIR / "aihf_runner.py", ticker, as_of, mandate, out],
                    out, run_dir / "ai-hedge-fund.log", AIHF_TIMEOUT_SECONDS, "ai-hedge-fund", say, events,
-                   plan=ctx["plan"])
+                   allow_no_rating=True, plan=ctx["plan"])
     payload = _stamp(out, payload, wanted)
     events.emit("engine_done", engine="value", rating=payload["rating"],
-                text=f"Research Manager: {payload['rating']}")
+                text=f"Research Manager: {payload['rating'] or 'rating withheld'}")
     return payload
 
 
@@ -205,11 +206,22 @@ def _run(python: Path, cwd: Path, args: list, out: Path, log: Path, timeout: int
 
 
 def _load(path: Path, allow_no_rating: bool = False) -> dict:
-    """Edge Desk may withhold its rating on bad data; that is an answer, not a failure."""
+    """Accept explicit withholds, but still reject a broken Veterans rating."""
     payload = json.loads(path.read_text(encoding="utf-8"))
     rating = normalize(payload.get("rating"))
-    if rating is None and not allow_no_rating:
+    if rating is None and not (allow_no_rating and
+                              (payload.get("engine") != "ai-hedge-fund" or
+                               _veterans_abstained(payload))):
         raise DeskError(f"{payload.get('engine')} produced no usable rating "
                         f"({payload.get('rating')!r}) in {path}")
     payload["rating"] = rating
     return payload
+
+
+def _veterans_abstained(payload: dict) -> bool:
+    """A no-rating Veterans report is valid only when every recorded persona had no view."""
+    verdict = payload.get("verdict") or {}
+    personas = payload.get("personas") or []
+    return (payload.get("rating") is None and verdict.get("rating") is None and
+            verdict.get("desk_rating") is None and verdict.get("desk_score") is None and
+            bool(personas) and all(p.get("call") in ("abstained", "no view") for p in personas))

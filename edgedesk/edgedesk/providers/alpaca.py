@@ -27,10 +27,15 @@ FEED_ENV = "ALPACA_DATA_FEED"  # "auto" (SIP, then IEX), "sip" (paid, full tape)
 # Point at another project's .env to share its keys instead of copying them.
 ENV_FILE_ENV = "ALPACA_ENV_FILE"
 
-# Accepted spellings, in order: this app's, Alpaca SDK's, a trading bot's.
-_KEY_NAMES = (("ALPACA_API_KEY", "ALPACA_SECRET_KEY"),
+# Accepted spellings, in order: mode-specific local setup, this app's, Alpaca SDK's, a trading bot's.
+_KEY_NAMES = (("alpaca_paper_api_key", "alpaca_paper_secret"),
+              ("ALPACA_API_KEY", "ALPACA_SECRET_KEY"),
               ("APCA_API_KEY_ID", "APCA_API_SECRET_KEY"),
               ("ALPACA_TRADING_KEY", "ALPACA_TRADING_SECRET"))
+
+
+def credential_help() -> str:
+    return "; ".join(f"{key} + {secret}" for key, secret in _KEY_NAMES)
 
 
 def resolve_credentials() -> tuple[str, str]:
@@ -202,8 +207,8 @@ class AlpacaClient:
         """Fail-loud GET. None only for "this symbol has no data" (404/422)."""
         if not self._key or not self._secret:
             raise FreeDataError(
-                f"Alpaca keys missing: set {KEY_ENV} and {SECRET_ENV}, or {ENV_FILE_ENV} "
-                "to another .env that has them (in ~/.hedge-fund/.env or the environment)"
+                f"No complete Alpaca credential pair found. Checked {credential_help()}. "
+                f"Alternatively set {ENV_FILE_ENV} to an .env containing one of those pairs."
             )
         headers = {"APCA-API-KEY-ID": self._key, "APCA-API-SECRET-KEY": self._secret}
         for delay in (*_RETRY_DELAYS, None):

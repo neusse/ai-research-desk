@@ -127,6 +127,19 @@ def test_without_a_manager_there_is_no_llm_call():
     assert v.headlines == []  # news is only fetched for the manager
 
 
+def test_every_analyst_abstaining_withholds_manager_rating(tmp_path):
+    signals = [Signal(model_name=name, ticker="V", date="2026-09-15", value=0.0,
+                      reasoning="insufficient data", metadata={"abstained": True})
+               for name in ("graham", "buffett", "munger")]
+    llm = FakeLLM(VERDICT)
+    result = add_verdicts(_record({"value": signals}), CaveatClient(),
+                          ResearchManager(llm=llm, cache=PromptCache(tmp_path)))
+    verdict = result.verdicts["V"]
+    assert verdict.rating is None and verdict.desk_rating is None
+    assert verdict.votes["no_view"] == 3 and llm.calls == 0
+    assert any("All analysts abstained" in c for c in verdict.data_caveats)
+
+
 def test_news_reaches_back_to_the_latest_earnings_release(tmp_path):
     from hedge_fund.data.models import CompanyNews, EarningsRecord
 

@@ -75,6 +75,8 @@ Keys live in `~/.hedge-desk/.env` on your machine, which is never committed. Do 
   what did not survive, and writes the memo. A 2 against 1 standoff is reported as gridlock, not
   decided for you.
 - **Data checks**: one settled close for every team, a stale-filing rule, unknown values kept unknown.
+  Veterans withholds its rating when every analyst abstains. Its company-filing personas do not
+  provide an ETF assessment; use Edge Desk's annotated fund analysis for ETF runs.
 - **The dashboard**: start a run, watch the teams work live, reopen any past run (a team report from
   earlier the same day is reused only if it came from the same plan, price session, models, fund and
   code), a weekly review of
@@ -193,8 +195,10 @@ All settings live in `~/.hedge-desk/.env`; `.env.example` documents every one.
 |---|---|
 | `DESK_PLAN` | `claude` (default) or `chatgpt` |
 | `SEC_USER_AGENT` | Required. Your name and email, which SEC asks for |
-| `ALPACA_API_KEY`, `ALPACA_SECRET_KEY` | Alpaca prices and news (free accounts work). Without them prices come from Yahoo and there is no news |
-| `DESK_CHATGPT_STRONG`, `DESK_CHATGPT_FAST` | The ChatGPT models for the manager and analyst roles |
+| `alpaca_paper_api_key`, `alpaca_paper_secret` (or `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`) | Alpaca prices and Benzinga news (free paper accounts work). Without a complete pair, prices come from Yahoo and there is no news |
+| `DESK_CHATGPT_STRONG`, `DESK_CHATGPT_FAST` | The ChatGPT models for the manager/coordinator and analyst roles |
+| `DESK_CHATGPT_STRONG_EFFORT`, `DESK_CHATGPT_FAST_EFFORT` | Optional reasoning effort for each model lane (`low`, `medium`, `high`, `xhigh`, or `max`) |
+| `DESK_CHATGPT_EFFORT` | Optional global reasoning-effort override; when set, it supersedes both lane settings |
 | `TRADINGAGENTS_*`, `HEDGE_FUND_*`, `EDGE_DESK_MODEL` | The Claude models each team uses |
 | `FRED_API_KEY` | Macro data for TradingAgents (free) |
 | `DESK_VAULT_DIR` | Also save each memo as a note in a markdown vault such as Obsidian |

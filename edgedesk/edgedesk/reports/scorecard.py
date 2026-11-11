@@ -13,6 +13,7 @@ not there.
 from __future__ import annotations
 
 from edgedesk.reports import longterm_block, swing_block
+from edgedesk.reports.common import etf_methodology, evidence_basis, foreign_filer_methodology
 
 ORDER = ("swing", "long_term")
 
@@ -60,6 +61,10 @@ def render(run: dict) -> str:
                f"{_price(anchors.get('last_close'))}"
                f"{_dividend_bit(ev)}")
     out.append(_rule(78, "="))
+    method = foreign_filer_methodology(ev) or etf_methodology(ev)
+    if method:
+        out.append(f"METHOD: {method}")
+        out.append(_rule())
 
     for key in ORDER:
         out.extend(_horizon_block(run, key))
@@ -251,7 +256,7 @@ def _relative_block(run: dict) -> list[str]:
 def _scores_block(run: dict) -> list[str]:
     out = [_rule(), "FACTORS (0-100, higher is better; risk higher means riskier)"]
     families = run.get("factors") or {}
-    keys = ("quality", "growth", "valuation", "momentum", "relative_strength",
+    keys = ("fund", "quality", "growth", "valuation", "momentum", "relative_strength",
             "technical", "earnings", "risk")
     cells = []
     for key in keys:
@@ -277,9 +282,7 @@ def _scores_block(run: dict) -> list[str]:
 def _quality_block(run: dict) -> list[str]:
     ev = run.get("evidence") or {}
     caveats = ev.get("caveats") or []
-    out = [_rule(), f"DATA QUALITY {ev.get('quality_score')}/100   "
-                    f"{ev.get('bar_count')} daily bars   "
-                    f"{len(ev.get('metrics') or [])} filed quarters"]
+    out = [_rule(), f"DATA QUALITY {ev.get('quality_score')}/100   {evidence_basis(ev)}"]
     if not caveats:
         out.append("  No data caveats.")
         return out

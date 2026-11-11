@@ -115,9 +115,12 @@ def main() -> None:
         events.emit("agent_queued", engine="value", who="Professor Ledger", role="Research manager")
         record = add_verdicts(record, data, ResearchManager())
         _v = record.verdicts[ticker]
+        _manager_text = (_v.summary or "\n\n".join(_v.data_caveats) or
+                         "No analyst call was available.")
         events.emit("agent_done", engine="value", who="Professor Ledger", role="Research manager",
-                    step="research_manager", text=_gist(_v.summary or ""), full="\n\n".join(x for x in (_v.summary, _v.thesis) if x),
-                    call=f"{(_v.rating or _v.desk_rating or '').upper()}"
+                    step="research_manager", text=_gist(_manager_text),
+                    full="\n\n".join(x for x in (_v.summary, _v.thesis) if x) or _manager_text,
+                    call=f"{(_v.rating or _v.desk_rating or 'WITHHELD').upper()}"
                          + (f" {_v.confidence:.0f}%" if _v.confidence else ""),
                     tone="bull" if (_v.rating or "") in ("Buy", "Overweight") else
                          "bear" if (_v.rating or "") in ("Sell", "Underweight") else "neutral")

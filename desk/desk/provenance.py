@@ -33,13 +33,15 @@ DESK_PACKAGE = Path(__file__).resolve().parent
 
 PREFIX = {"quant": "TRADINGAGENTS_", "vets": "HEDGE_FUND_", "edge": "EDGE_DESK_"}
 SHARED = ("ALPACA_DATA_FEED", "DESK_LLM")                    # every team's data feed and call path
-CHATGPT = ("DESK_CHATGPT_STRONG", "DESK_CHATGPT_FAST")
+CHATGPT = ("DESK_CHATGPT_STRONG", "DESK_CHATGPT_FAST", "DESK_CHATGPT_STRONG_EFFORT",
+           "DESK_CHATGPT_FAST_EFFORT", "DESK_CHATGPT_EFFORT")
 # Where output goes, and secrets: neither changes what a team concludes. A credential is a KEY,
 # SECRET, PASSWORD or a singular TOKEN (ACCESS_TOKEN); a TOKENS budget (MAX_TOKENS) is a research
 # setting and is kept (Codex G2).
 _SKIP = re.compile(r"(KEY|TOKEN(?!S)|SECRET|PASSWORD|CREDENTIAL|_DIR|_PATH|_FILE|VAULT)", re.I)
 # Data sources an engine picks by which credentials exist. The choice is recorded, never the value.
-_ALPACA_PAIRS = (("ALPACA_API_KEY", "ALPACA_SECRET_KEY"), ("APCA_API_KEY_ID", "APCA_API_SECRET_KEY"),
+_ALPACA_PAIRS = (("alpaca_paper_api_key", "alpaca_paper_secret"),
+                 ("ALPACA_API_KEY", "ALPACA_SECRET_KEY"), ("APCA_API_KEY_ID", "APCA_API_SECRET_KEY"),
                  ("ALPACA_TRADING_KEY", "ALPACA_TRADING_SECRET"))
 SOURCE = {"quant": lambda: TA_DIR / "tradingagents", "vets": lambda: AIHF_DIR / "hedge_fund",
           "edge": lambda: EDGE_DIR / "edgedesk"}

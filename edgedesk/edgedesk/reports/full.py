@@ -17,8 +17,8 @@ from edgedesk.reports import longterm_block, research_block, swing_block
 from edgedesk.reports.scorecard import SWING_NOTE
 from edgedesk.reports.common import partial_label
 from edgedesk.reports.common import (
-    FAMILY_ORDER, HORIZON_ORDER, WINDOWS, fact_value, money, num, pct, pct0, price,
-    rating_line, signal_value,
+    FAMILY_ORDER, HORIZON_ORDER, WINDOWS, etf_methodology, evidence_basis, fact_value,
+    foreign_filer_methodology, money, num, pct, pct0, price, rating_line, signal_value,
 )
 
 
@@ -36,6 +36,9 @@ def render(run: dict) -> str:
         f"As of **{run['as_of']}**, generated {run['generated_at']}.",
         "",
     ]
+    method = foreign_filer_methodology(ev) or etf_methodology(ev)
+    if method:
+        out += ["## Methodology annotation", "", f"**{method}**", ""]
     out += _summary(run)
     out += _verdict_detail(run)
     if run.get("long_term"):
@@ -45,6 +48,7 @@ def render(run: dict) -> str:
     out += _street(ev)
     out += _relative(ev)
     out += _factor_detail(run)
+    out += _fund(ev)
     out += _fundamentals(ev)
     out += _events(ev)
     out += _written(run)
@@ -341,6 +345,10 @@ def _factor_detail(run: dict) -> list[str]:
 def _fundamentals(ev: dict) -> list[str]:
     metrics = ev.get("metrics") or []
     if not metrics:
+        if (ev.get("profile") or {}).get("security_type") == "ETF":
+            return ["## Company fundamentals", "",
+                    "Not applicable: this security is an ETF. Fund structure and market "
+                    "behavior are evaluated separately above.", ""]
         return ["## Fundamentals", "",
                 "No US GAAP quarterly facts were available for this filer.", ""]
     out = ["## Fundamentals, point in time", "",
@@ -360,6 +368,29 @@ def _fundamentals(ev: dict) -> list[str]:
                "what makes the own-history multiple a genuine history rather than today's "
                "price divided by old earnings.")
     out.append("")
+    return out
+
+
+def _fund(ev: dict) -> list[str]:
+    fund = ev.get("fund") or {}
+    if not fund:
+        return []
+    top = fund.get("top_holdings") or []
+    out = ["## ETF structure", "", f"{fund.get('description') or 'No strategy description available.'}", "",
+           "| Measure | Value |", "|---|---:|",
+           f"| Category | {fund.get('category') or 'n/a'} |",
+           f"| Sponsor family | {fund.get('family') or 'n/a'} |",
+           f"| Expense ratio | {pct0(fund.get('expense_ratio'))} |",
+           f"| Category-average expense ratio | {pct0(fund.get('category_expense_ratio'))} |",
+           f"| Net assets | {money(fund.get('total_assets'))} |",
+           f"| NAV | {price(fund.get('nav_price'))} |",
+           f"| Market premium/discount | {pct(fund.get('premium_discount'))} |",
+           f"| Equity allocation | {pct0(fund.get('stock_position'))} |", ""]
+    if top:
+        out += ["**Largest reported holdings**", "", "| Ticker | Holding | Weight |",
+                "|---|---|---:|"]
+        out += [f"| {h.get('symbol')} | {h.get('name')} | {pct0(h.get('weight'))} |" for h in top]
+        out.append("")
     return out
 
 
@@ -481,8 +512,7 @@ def _evidence_table(ev: dict) -> list[str]:
 def _quality(ev: dict) -> list[str]:
     caveats = ev.get("caveats") or []
     out = [f"## Data quality: {ev.get('quality_score')}/100", "",
-           f"{ev.get('bar_count')} daily bars and {len(ev.get('metrics') or [])} filed "
-           "quarters were available.", ""]
+           f"{evidence_basis(ev)} were available.", ""]
     if not caveats:
         out += ["No caveats were raised.", ""]
         return out

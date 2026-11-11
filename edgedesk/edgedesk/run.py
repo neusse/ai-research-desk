@@ -22,12 +22,12 @@ from datetime import date, datetime, timezone
 from edgedesk.evidence import business, estimates
 from edgedesk.evidence.package import Evidence, collect
 from edgedesk.evidence.valuation import build_valuation, fair_value, rows_from_metrics
-from edgedesk.factors.families import FACTORS_VERSION, compute as compute_families
+from edgedesk.factors.families import compute as compute_families
 from edgedesk.paths import ensure, run_path
 from edgedesk.providers.client import DataClient
 from edgedesk.verdict import calibration, levels as levels_mod, signal as signal_mod
 from edgedesk.verdict import swing as swing_mod
-from edgedesk.verdict.rating import HORIZONS, RATING_VERSION, WITHHELD, rate
+from edgedesk.verdict.rating import HORIZONS, WITHHELD, rate
 
 logger = logging.getLogger(__name__)
 
@@ -103,14 +103,18 @@ def analyze(ticker: str, as_of: date, client: DataClient | None = None,
             "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "owns": owns,
             "versions": {
-                "factors": FACTORS_VERSION,
-                "rating": RATING_VERSION,
+                "factors": verdicts["long_term"]["factors_version"],
+                "rating": verdicts["long_term"]["rating_version"],
                 "swing": swing_mod.SWING_VERSION,
                 "schema": RUN_SCHEMA_VERSION,
             },
             "evidence": ev_dict,
             "swing": swing_call,
             "long_term": (
+                {"available": False, "call": None,
+                 "why": ("The company owner-earnings scenario does not apply to an ETF. The "
+                         "long-term rating above uses the separate equity-ETF methodology.")}
+                if (ev.profile or {}).get("security_type") == "ETF" else
                 {"available": False, "call": None,
                  "why": "No long-term case: the data for this name was withheld (see data quality)."}
                 if verdicts["long_term"].get("quality_state") == WITHHELD else
@@ -129,7 +133,8 @@ def analyze(ticker: str, as_of: date, client: DataClient | None = None,
                                                lv.get("long_term"), ev.anchors,
                                                "long_term"),
             },
-            "calibration": {k: calibration.standing(k) for k in HORIZONS},
+            "calibration": {k: calibration.standing(k, verdicts[k]["methodology"])
+                            for k in HORIZONS},
             "estimate_snapshot": snapshot_path,
             "llm": None,
         }

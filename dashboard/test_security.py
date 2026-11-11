@@ -222,3 +222,30 @@ def test_a_run_carries_the_plan_picked_in_the_form(tmp_path, monkeypatch):
     server.start_run("NVDA", False, ["quant", "vets"], True, "gpt-9000")
     assert seen[-1] == "claude"
     server.RUNS.clear()
+
+
+def test_status_recovers_a_finished_run_after_live_tracking_is_lost(tmp_path, monkeypatch):
+    """A completed bundle is authoritative even if the dashboard forgot its process object."""
+    rid = "RUN-2026-11-10-101833-6d87d3"
+    run_dir = tmp_path / "runs" / rid
+    run_dir.mkdir(parents=True)
+    (run_dir / "memo.json").write_text(json.dumps({
+        "ticker": "RUN", "date": "2026-11-10", "run_id": "101833-6d87d3",
+        "owns": False, "engines": ["quant", "vets"], "mode": "debate",
+        "plan": {"name": "chatgpt"},
+    }), encoding="utf-8")
+    (run_dir / "events.jsonl").write_text(
+        json.dumps({"type": "run_started", "ticker": "RUN", "date": "2026-11-10"}) + "\n" +
+        json.dumps({"type": "run_finished", "text": "Memo saved"}) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(server, "MEMOS", tmp_path)
+    monkeypatch.setattr(server, "RUNS", {})
+
+    recovered = server.status(rid, 1)
+
+    assert recovered["running"] is False
+    assert recovered["exit"] == 0
+    assert recovered["ticker"] == "RUN"
+    assert recovered["date"] == "2026-11-10"
+    assert recovered["events"] == [{"type": "run_finished", "text": "Memo saved", "seq": 2}]

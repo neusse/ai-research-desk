@@ -176,3 +176,53 @@ def test_a_run_without_alpaca_keys_says_its_prices_are_from_yahoo(tmp_path, monk
                           is_historical=False)
     package._collect_market(ev, __import__("datetime").date(2026, 9, 15), client)
     assert any(c.code == "prices_from_yahoo" and c.severity == "info" for c in ev.caveats)
+
+
+def test_lowercase_paper_credentials_are_a_complete_alpaca_pair(monkeypatch):
+    """The local Alpaca setup uses mode-specific lowercase names; Edge must accept them."""
+    from edgedesk.providers import alpaca
+    for key, secret in alpaca._KEY_NAMES:
+        monkeypatch.delenv(key, raising=False)
+        monkeypatch.delenv(secret, raising=False)
+    monkeypatch.setenv("alpaca_paper_api_key", "paper-key")
+    monkeypatch.setenv("alpaca_paper_secret", "paper-secret")
+
+    assert alpaca.resolve_credentials() == ("paper-key", "paper-secret")
+
+
+def test_foreign_filer_caveat_names_the_filing_and_parser_limit(home):
+    from tests.conftest import FakeClient
+    profile = {"cik": 1, "name": "Arm Holdings plc", "sic": "3674",
+               "sic_description": "Semiconductors", "exchanges": ["Nasdaq"],
+               "latest_report": None,
+               "latest_foreign_report": {"form": "20-F", "filed": "2026-06-24",
+                                           "period": "2026-03-31"}}
+    run = run_mod.analyze("ARM", AS_OF, client=FakeClient(metrics=[], profile=profile), save=False)
+    caveat = next(c for c in run["evidence"]["caveats"] if c["code"] == "no_gaap_fundamentals")
+    assert "20-F filed 2026-06-24" in caveat["message"]
+    assert "No complete TTM row" in caveat["message"]
+    assert "not treated as zero" in caveat["message"]
+
+
+def test_normalized_foreign_filer_is_degraded_not_withheld(home):
+    from tests.conftest import FakeClient
+    profile = {"cik": 1, "name": "Arm Holdings plc", "sic": "3674",
+               "sic_description": "Semiconductors", "exchanges": ["Nasdaq"],
+               "latest_report": None,
+               "latest_foreign_report": {"form": "20-F", "filed": "2026-06-24",
+                                           "period": "2026-03-31"}}
+    run = run_mod.analyze("ARM", AS_OF, client=FakeClient(profile=profile), save=False)
+    caveat = next(c for c in run["evidence"]["caveats"] if c["code"] == "foreign_filer_normalized")
+    assert caveat["severity"] == "degrade"
+    assert run["evidence"]["quality_score"] > 0
+    assert run["verdicts"]["long_term"]["quality_state"] != "WITHHELD"
+
+
+def test_missing_news_credentials_are_not_reported_as_no_earnings_release(home):
+    from tests.conftest import FakeClient
+    client = FakeClient(news=False, release=False)
+    client.alpaca = type("AlpacaWithoutKeys", (), {"source": "yahoo", "has_keys": lambda self: False})()
+    run = run_mod.analyze("TEST", AS_OF, client=client, save=False)
+    codes = {c["code"] for c in run["evidence"]["caveats"]}
+    assert "no_release_source" in codes
+    assert "no_release" not in codes

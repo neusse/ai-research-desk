@@ -124,3 +124,10 @@ def test_alpaca_keys_in_a_shared_file_count_and_their_values_are_never_recorded(
     assert (without["data"]["alpaca"], with_keys["data"]["alpaca"]) == (False, True)
     assert prov.differs(without, with_keys) == "its data sources differs"
     assert "secret-x" not in json.dumps(with_keys) and "id-x" not in json.dumps(with_keys)
+
+
+def test_lowercase_paper_alpaca_keys_select_alpaca_without_recording_secrets(known_source):
+    env = {"alpaca_paper_api_key": "paper-id", "alpaca_paper_secret": "paper-secret"}
+    recorded = prov.expected("edge", "chatgpt", "2026-10-06", env=env)
+    assert recorded["data"]["alpaca"] is True
+    assert "paper-id" not in json.dumps(recorded) and "paper-secret" not in json.dumps(recorded)

@@ -65,11 +65,13 @@ cache/                             provider caches (EDGAR companyfacts, CIKs)
 
 ```
 providers/   alpaca, edgar, yahoo, benzinga        ported from ai-hedge-fund's free stack
-             plus filings (10-Q/10-K text) and splits (repairs the feed's missed splits)
+             plus domestic 10-Q/10-K and US-GAAP-tagged foreign 20-F/6-K facts,
+             ETF structure/holdings, filing text and splits
+             (repairs the feed's missed splits)
 evidence/    package, anchors, decision (valuation at the decision price), valuation,
              business (the long-term case), forward (Street estimates), sentiment,
              sectors, estimates
-factors/     scale (the curves), families (the eight; a screen, not the call)
+factors/     scale (the curves), company families plus an equity-ETF fund family
 verdict/     swing (the Buy/Sell call and plan), rating (the screen), levels,
              calibration standing, published (what may be shown)
 llm/         headless (Max transport), prompts, schema, citations, analysis,
@@ -101,8 +103,27 @@ nothing becomes a neutral score.
 **Ratings can be withheld.** Every verdict carries `VALID`, `DEGRADED` or
 `WITHHELD`. Withheld when the share count is unresolvable, when EDGAR's
 companyfacts feed stops at a quarter older than the newest filed 10-Q, when
-there is no US GAAP data at all, when price history is too short, or when under
-55% of the weighted evidence could be computed.
+there is no usable standard US GAAP data, when price history is too short, or
+when under 55% of the weighted evidence could be computed. Foreign filers that
+publish standard US GAAP facts are normalized from annual 20-F/40-F and
+financial 6-K filings; their rating is marked `DEGRADED` because interim 6-K
+disclosure is less uniform than a 10-Q. Every report and the combined desk memo
+show a prominent **Foreign-filer normalization used** methodology annotation
+when this path is active. IFRS-only taxonomies remain withheld.
+
+**Equity ETFs use a different methodology.** An ETF is detected from Yahoo's
+security type and is not sent through the company GAAP gate. Current equity ETFs
+are rated from fund structure (fees, assets, reported holdings concentration and
+the market price's gap to NAV), market trend and performance relative to SPY.
+Every format prints an **ETF methodology used** annotation, and the result is
+`DEGRADED` because free holdings data are current-only and the model is not yet
+historically calibrated. Distribution yield is never rewarded as investment
+return; the model does not claim to measure distribution sustainability.
+Historical ETF runs exclude today's fund snapshot, and bond, commodity, cash
+and multi-asset ETFs remain `WITHHELD` until they have appropriate benchmarks
+and factor curves. ETF conviction is capped at Low while the screen is
+unmeasured. The stock swing strategy abstains on ETFs because its backtest does
+not cover them.
 
 **Risk points one way.** Higher always means more risk, and risk never enters
 the rating: it shapes conviction and the levels.
@@ -197,5 +218,5 @@ at a P/E of 7.5 instead of 75.5. Every 90+ score in that sample was this error.
 .venv/Scripts/python.exe -m pytest -q
 ```
 
-160 tests, no network: the suite runs against a fake client that records every
+315 tests, no network: the suite runs against a fake client that records every
 date boundary it was asked for.

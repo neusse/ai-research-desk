@@ -11,7 +11,8 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 from edgedesk.evidence.package import collect
-from edgedesk.providers.edgar import Company, Fact, ReportPeriod, pit_values
+from edgedesk.providers.edgar import (Company, Fact, ReportPeriod, build_metrics,
+                                      parse_companyfacts, pit_values)
 from tests.conftest import FakeClient, make_bars, make_metrics
 
 
@@ -56,6 +57,43 @@ def test_pit_values_ignores_facts_filed_later():
 
     later = pit_values(company, ["Revenues"], date(2026, 8, 1))
     assert (date(2026, 4, 1), date(2026, 6, 30)) in later
+
+
+def test_us_gaap_foreign_filer_builds_ttm_from_20f_and_financial_6k():
+    """ARM-style filers publish annual 20-F and interim 6-K XBRL, not 10-K/10-Q."""
+    def fact(val, start, end, filed, form, accn):
+        return {"val": val, "start": start, "end": end, "filed": filed,
+                "form": form, "accn": accn}
+
+    def concept(rows):
+        return {"units": {"USD": rows}}
+
+    annual_revenue = fact(1_000, "2025-04-01", "2026-03-31", "2026-05-26", "20-F", "annual")
+    annual_income = fact(100, "2025-04-01", "2026-03-31", "2026-05-26", "20-F", "annual")
+    prior_ytd_revenue = fact(450, "2025-04-01", "2025-09-30", "2025-11-05", "6-K", "prior")
+    prior_ytd_income = fact(40, "2025-04-01", "2025-09-30", "2025-11-05", "6-K", "prior")
+    current_ytd_revenue = fact(600, "2026-04-01", "2026-09-30", "2026-11-04", "6-K", "current")
+    current_ytd_income = fact(70, "2026-04-01", "2026-09-30", "2026-11-04", "6-K", "current")
+    payload = {"cik": 1973239, "facts": {"us-gaap": {
+        "Revenues": concept([annual_revenue, prior_ytd_revenue, current_ytd_revenue,
+                             fact(999, "2026-10-01", "2026-10-31", "2026-11-06", "6-K", "news-only")]),
+        "NetIncomeLoss": concept([annual_income, prior_ytd_income, current_ytd_income]),
+        "Assets": concept([
+            {"val": 900, "end": "2026-03-31", "filed": "2026-05-26", "form": "20-F", "accn": "annual"},
+            {"val": 950, "end": "2025-09-30", "filed": "2025-11-05", "form": "6-K", "accn": "prior"},
+            {"val": 1_100, "end": "2026-09-30", "filed": "2026-11-04", "form": "6-K", "accn": "current"},
+        ]),
+    }}}
+
+    company = parse_companyfacts(payload)
+    rows = build_metrics("ARM", company, date(2026, 11, 9), 12,
+                         price_on=lambda _: 100.0, split_factor=lambda _a, _b: 1.0)
+
+    assert [p.end.isoformat() for p in company.periods] == ["2026-09-30", "2026-03-31", "2025-09-30"]
+    assert all(p.accn != "news-only" for p in company.periods)
+    assert rows[0].revenue == 1_150
+    assert rows[0].net_income == 130
+    assert rows[0].filing_date == "2026-11-04"
 
 
 def test_restatement_is_visible_once_filed():

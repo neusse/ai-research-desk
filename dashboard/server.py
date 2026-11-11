@@ -220,6 +220,21 @@ def status(rid: str, since: int) -> dict:
     with LOCK:
         run = RUNS.get(rid)
     if not run:
+        # RUNS is intentionally in-memory, while completed research is durable.  A browser may
+        # still be on ?live= after the server restarts (or after a brief tracking failure).  If
+        # the run wrote its final bundle, let the ordinary successful-completion path take over
+        # instead of telling the user that the finished decision was lost.
+        run_dir = MEMOS / "runs" / rid
+        memo = run_dir / "memo.json"
+        if memo.exists():
+            bundle = json.loads(memo.read_text(encoding="utf-8"))
+            events = read_events(run_dir / "events.jsonl", since)
+            plan = bundle.get("plan") or {}
+            return {"events": events, "running": False, "exit": 0, "elapsed": 0,
+                    "ticker": bundle.get("ticker"), "date": bundle.get("date"),
+                    "own": bool(bundle.get("owns")), "engines": bundle.get("engines") or ["quant", "vets"],
+                    "debate": bundle.get("mode") == "debate", "plan": plan.get("name", "claude"),
+                    "cancelled": False, "recovered": True}
         return {"error": "This run is not known to the server. It may have been started before a restart."}
     code = run["proc"].poll()
     out = {"events": read_events(run["run_dir"] / "events.jsonl", since), "running": code is None,

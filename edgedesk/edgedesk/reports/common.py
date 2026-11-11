@@ -9,10 +9,37 @@ everywhere, and a figure that is missing looks missing in all three.
 from __future__ import annotations
 
 # The families in the order a reader wants them, not alphabetical.
-FAMILY_ORDER = ("quality", "growth", "valuation", "momentum", "relative_strength",
+FAMILY_ORDER = ("fund", "quality", "growth", "valuation", "momentum", "relative_strength",
                 "technical", "earnings", "risk")
 HORIZON_ORDER = ("swing", "long_term")
 WINDOWS = ("1m", "3m", "6m", "12m")
+
+
+def foreign_filer_methodology(ev: dict) -> str | None:
+    """A prominent annotation when 20-F/6-K normalization was used."""
+    caveat = next((c for c in (ev.get("caveats") or [])
+                   if c.get("code") == "foreign_filer_normalized"), None)
+    if not caveat:
+        return None
+    report = ((ev.get("profile") or {}).get("latest_foreign_report") or {})
+    annual = report.get("form") or "20-F/40-F"
+    return (f"Foreign-filer normalization used. Standard US GAAP facts from the issuer's "
+            f"annual {annual} and financial 6-K filings were converted into point-in-time TTM "
+            "periods. Interim 6-K disclosure is less uniform than a 10-Q, so data quality and "
+            "rating confidence are degraded.")
+
+
+def etf_methodology(ev: dict) -> str | None:
+    caveat = next((c for c in (ev.get("caveats") or [])
+                   if c.get("code") == "etf_methodology"), None)
+    return caveat.get("message") if caveat else None
+
+
+def evidence_basis(ev: dict) -> str:
+    if (ev.get("profile") or {}).get("security_type") == "ETF":
+        snapshot = "a current fund snapshot" if ev.get("fund") else "no point-in-time fund snapshot"
+        return f"{ev.get('bar_count')} daily bars and {snapshot}"
+    return f"{ev.get('bar_count')} daily bars and {len(ev.get('metrics') or [])} filed quarters"
 
 
 def price(v) -> str:
@@ -71,6 +98,12 @@ def signal_value(signal: dict) -> str:
     if not isinstance(raw, (int, float)):
         return str(raw)
     key = signal.get("key", "")
+    if key == "fund_assets":
+        return money(raw)
+    if key in ("expense_ratio", "top_holdings_concentration", "nav_gap"):
+        return pct0(raw)
+    if key == "relative_fee":
+        return f"{raw:,.2f}x"
     if any(k in key for k in ("margin", "roe", "roa", "growth", "ret_", "spy", "sector",
                               "yield", "surprise", "drawdown", "volatility", "atr_pct",
                               "vs_sma", "from_high", "gap")):

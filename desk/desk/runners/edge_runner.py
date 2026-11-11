@@ -33,6 +33,7 @@ from edgedesk.config import ENV_PATH, load as load_env  # noqa: E402
 from edgedesk.llm import prompts  # noqa: E402
 from edgedesk.llm.analysis import attach  # noqa: E402
 from edgedesk.providers.client import DataClient, settled_as_of  # noqa: E402
+from edgedesk.reports.common import etf_methodology, foreign_filer_methodology  # noqa: E402
 
 LENS_NAMES = {"quality_compounder": "Quality lens", "deep_value": "Deep value lens",
               "growth_at_reasonable_price": "Growth lens", "trend_and_flow": "Trend lens"}
@@ -136,6 +137,9 @@ def main() -> None:
     run_mod.write(run)
 
     llm = run.get("llm") or {}
+    if not llm.get("ok") and not llm.get("usage_limited"):
+        raise SystemExit("Edge Desk written analysis was unavailable: "
+                         + str(llm.get("error") or "no successful synthesis"))
     if llm.get("usage_limited"):
         # Exit without writing the report: a half-written analysis must not be reused later today.
         raise SystemExit(f"The {'ChatGPT' if _plan() == 'chatgpt' else 'Claude'} plan stopped Edge Desk's written analysis "
@@ -175,6 +179,7 @@ def main() -> None:
         "quality_state": lt.get("quality_state"), "action": lt.get("action"),
         # The codes the desk's eligibility step reads (desk/eligibility.py).
         "caveats": [{k: c.get(k) for k in ("code", "severity", "message")} for c in ev.get("caveats") or []],
+        "methodology": foreign_filer_methodology(ev) or etf_methodology(ev),
         "calibration": run.get("calibration"), "swing": sig,
         "report_md": reports.render(run, "full"), "condensed_md": reports.render(run, "condensed"),
         "steps": steps, "last_close": (ev.get("anchors") or {}).get("last_close"),

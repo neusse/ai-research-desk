@@ -29,9 +29,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from edgedesk.evidence.package import Evidence
-from edgedesk.factors.families import FACTORS_VERSION, Family
+from edgedesk.factors.families import ETF_FACTORS_VERSION, FACTORS_VERSION, Family
 
 RATING_VERSION = "1.0.0"
+ETF_RATING_VERSION = "etf-1.0.0"
 
 VALID, DEGRADED, WITHHELD = "VALID", "DEGRADED", "WITHHELD"
 
@@ -64,6 +65,25 @@ HORIZONS = {
     },
 }
 
+ETF_HORIZONS = {
+    "swing": {
+        "label": "Swing (2 to 6 weeks)",
+        "question": "Held for two to six weeks, is this equity ETF worth owning now?",
+        "weights": {
+            "relative_strength": 0.35, "momentum": 0.30,
+            "technical": 0.25, "fund": 0.10,
+        },
+    },
+    "long_term": {
+        "label": "Long term (1 year or more)",
+        "question": "Held for a year or more, is this equity ETF worth owning now?",
+        "weights": {
+            "fund": 0.50, "relative_strength": 0.25,
+            "momentum": 0.15, "technical": 0.10,
+        },
+    },
+}
+
 # Same five tiers both upstream projects use, so their output stays comparable.
 BANDS = (
     (75.0, "Buy"),
@@ -92,15 +112,19 @@ class Verdict:
     contributions: list[dict] = field(default_factory=list)
     reasons: list[str] = field(default_factory=list)
     action: str | None = None
+    methodology: str = "company"
 
     def to_dict(self) -> dict:
+        is_etf = self.methodology == "equity_etf"
         return {
             "horizon": self.horizon, "label": self.label, "score": self.score,
             "rating": self.rating, "quality_state": self.quality_state,
             "conviction": self.conviction, "coverage": self.coverage,
             "risk_score": self.risk_score, "action": self.action,
             "contributions": self.contributions, "reasons": self.reasons,
-            "rating_version": RATING_VERSION, "factors_version": FACTORS_VERSION,
+            "methodology": self.methodology,
+            "rating_version": ETF_RATING_VERSION if is_etf else RATING_VERSION,
+            "factors_version": ETF_FACTORS_VERSION if is_etf else FACTORS_VERSION,
         }
 
 
@@ -114,7 +138,9 @@ def band_for(score: float) -> str:
 def rate(ev: Evidence, families: dict[str, Family], horizon: str,
          owns: bool = False) -> Verdict:
     """Score one horizon and decide whether it may be published."""
-    spec = HORIZONS[horizon]
+    is_etf = (ev.profile or {}).get("security_type") == "ETF"
+    spec = (ETF_HORIZONS if is_etf else HORIZONS)[horizon]
+    methodology = "equity_etf" if is_etf else "company"
     weights: dict[str, float] = spec["weights"]
 
     contributions: list[dict] = []
@@ -153,14 +179,14 @@ def rate(ev: Evidence, families: dict[str, Family], horizon: str,
         return Verdict(horizon=horizon, label=spec["label"], score=score, rating=None,
                        quality_state=WITHHELD, conviction="None", coverage=coverage,
                        risk_score=risk_score, contributions=contributions, reasons=reasons,
-                       action="No action: rating withheld")
+                       action="No action: rating withheld", methodology=methodology)
 
     rating = band_for(score)
-    conviction = _conviction(score, coverage, risk_score, families, weights)
+    conviction = "Low" if is_etf else _conviction(score, coverage, risk_score, families, weights)
     return Verdict(horizon=horizon, label=spec["label"], score=score, rating=rating,
                    quality_state=state, conviction=conviction, coverage=coverage,
                    risk_score=risk_score, contributions=contributions, reasons=reasons,
-                   action=action_for(rating, owns))
+                   action=action_for(rating, owns), methodology=methodology)
 
 
 def _quality_state(ev: Evidence, coverage: float) -> tuple[str, list[str]]:

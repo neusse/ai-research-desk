@@ -137,7 +137,25 @@ class DataClient:
     def profile(self, ticker: str) -> dict | None:
         """Name, SIC code and description, exchange, and the newest 10-Q/10-K on
         the filing index (which the freshness check compares against)."""
-        return self.edgar.profile(ticker)
+        profile = self.edgar.profile(ticker) or {}
+        try:
+            info = self.yahoo.info(ticker)
+        except FreeDataError as exc:
+            logger.info("security type unavailable for %s: %s", ticker, exc)
+            info = {}
+        if info.get("quoteType"):
+            profile["security_type"] = str(info["quoteType"]).upper()
+        if not profile.get("name") and (info.get("longName") or info.get("shortName")):
+            profile["name"] = info.get("longName") or info.get("shortName")
+        return profile
+
+    def fund_data(self, ticker: str) -> dict | None:
+        """Current ETF structure and holdings. Historical runs exclude this snapshot."""
+        try:
+            return self.yahoo.fund_data(ticker)
+        except FreeDataError as exc:
+            logger.info("fund data unavailable for %s: %s", ticker, exc)
+            return None
 
     # ------------------------------------------------------------------
     # Estimates and events

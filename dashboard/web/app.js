@@ -834,6 +834,7 @@ async function pollLive() {
   const L = S.liveState; if (!L) return;
   try {
     const r = await api(`/api/status?id=${encodeURIComponent(L.id)}&from=${L.from}`);
+    L.error = null;
     Object.assign(L, { elapsed: r.elapsed, running: r.running, exit: r.exit, log: r.log || "", ticker: r.ticker, date: r.date, own: r.own, plan: r.plan, cancelled: !!r.cancelled });
     if (!L.events.length) { L.engines = r.engines || L.engines; L.debate = r.debate !== false; }
     r.events.forEach(e => { applyEvent(L, e); L.from = e.seq; });
@@ -845,7 +846,10 @@ async function pollLive() {
     }
     if (!r.running) { clearInterval(S.poll); S.poll = null; }
   } catch (e) {
-    L.error = e.message; clearInterval(S.poll); S.poll = null;
+    // A laptop wake, a busy local server, or a dashboard restart can make one status request
+    // fail while the research process continues.  Keep polling: a completed memo is durable and
+    // the server can reconcile it on a later request.
+    L.error = e.message;
   }
   render();
 }
