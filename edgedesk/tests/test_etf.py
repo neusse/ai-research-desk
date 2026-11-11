@@ -171,4 +171,3 @@ def test_etf_versions_do_not_invalidate_the_company_formula():
     assert company["versions"]["factors"] == "1.1.0"
     assert company["verdicts"]["long_term"]["methodology"] == "company"
     assert company["calibration"]["long_term"]["stale"] is False
-
