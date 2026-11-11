@@ -24,7 +24,7 @@ from edgedesk.models import AnalystConsensus, CompanyNews, FinancialMetrics, Pri
 from edgedesk.providers._common import MISS, FreeDataError, TTLMemo, dash_symbol
 from edgedesk.providers.alpaca import AlpacaClient
 from edgedesk.providers.benzinga import Release, first_release
-from edgedesk.providers.edgar import EdgarClient, build_metrics
+from edgedesk.providers.edgar import EdgarClient, build_metrics, implied_ads_price_ratio
 from edgedesk.providers.yahoo import YahooClient
 from edgedesk.session import last_settled_day
 
@@ -133,6 +133,24 @@ class DataClient:
             ticker, as_of - timedelta(days=_PRICE_LOOKBACK_DAYS), as_of)
         days = [d for d in closes if d <= as_of]
         return closes[max(days)] if days else None
+
+    def ads_price_ratio(self, ticker: str, as_of: date) -> float | None:
+        """Point-in-time check of an ADS quote against an ordinary-share cover count."""
+        company = self.edgar.company(ticker)
+        if company is None:
+            return None
+        floats = [f for f in company.public_float if f.filed <= as_of and f.end <= as_of]
+        if not floats:
+            return None
+        latest = max(floats, key=lambda f: (f.end, f.filed))
+        closes = self.alpaca.raw_closes(ticker, latest.end - timedelta(days=_PRICE_LOOKBACK_DAYS),
+                                        latest.end)
+
+        def price_on(day: date) -> float | None:
+            days = [d for d in closes if d <= day]
+            return closes[max(days)] if days else None
+
+        return implied_ads_price_ratio(company, as_of, price_on)
 
     def profile(self, ticker: str) -> dict | None:
         """Name, SIC code and description, exchange, and the newest 10-Q/10-K on

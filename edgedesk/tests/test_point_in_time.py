@@ -12,7 +12,8 @@ from datetime import date, timedelta
 
 from edgedesk.evidence.package import collect
 from edgedesk.providers.edgar import (Company, Fact, ReportPeriod, _latest_report,
-                                      build_metrics, parse_companyfacts, pit_values)
+                                      build_metrics, implied_ads_price_ratio,
+                                      parse_companyfacts, pit_values)
 from tests.conftest import FakeClient, make_bars, make_metrics
 
 
@@ -94,6 +95,27 @@ def test_us_gaap_foreign_filer_builds_ttm_from_20f_and_financial_6k():
     assert rows[0].revenue == 1_150
     assert rows[0].net_income == 130
     assert rows[0].filing_date == "2026-11-04"
+
+
+def test_foreign_share_basis_uses_same_filing_and_float_date_close():
+    measured = date(2026, 3, 31)
+    filed = date(2026, 5, 26)
+    cover = Fact(None, measured, 1_000, filed, "20-F", "annual")
+    def company(float_value):
+        return Company(cik=1, cover_shares=[cover],
+                       public_float=[Fact(None, measured, float_value, filed, "20-F", "annual")])
+
+    assert implied_ads_price_ratio(company(100_000), filed, lambda day: 100.0) == 1.0
+    assert implied_ads_price_ratio(company(20_000), filed, lambda day: 100.0) == 0.2
+    assert implied_ads_price_ratio(company(100_000), date(2026, 5, 25), lambda day: 100.0) is None
+    assert implied_ads_price_ratio(Company(cik=1, cover_shares=[cover]), filed,
+                                   lambda day: 100.0) is None
+    assert implied_ads_price_ratio(company(100_000), filed, lambda day: None) is None
+    newer_unmatched = Fact(None, date(2026, 4, 30), 100_000,
+                           date(2026, 6, 1), "20-F", "other-filing")
+    with_newer = company(100_000)
+    with_newer.public_float.append(newer_unmatched)
+    assert implied_ads_price_ratio(with_newer, date(2026, 6, 1), lambda day: 100.0) is None
 
 
 def test_restatement_is_visible_once_filed():

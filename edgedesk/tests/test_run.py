@@ -199,8 +199,22 @@ def test_normalized_foreign_filer_is_degraded_not_withheld(home):
                "latest_report": None,
                "latest_foreign_report": {"form": "20-F", "filed": "2026-06-24",
                                            "period": "2026-03-31"}}
-    run = run_mod.analyze("ARM", AS_OF, client=FakeClient(profile=profile), save=False)
+    run = run_mod.analyze("ARM", AS_OF, client=FakeClient(profile=profile, ads_ratio=1.0), save=False)
     caveat = next(c for c in run["evidence"]["caveats"] if c["code"] == "foreign_filer_normalized")
     assert caveat["severity"] == "degrade"
     assert run["evidence"]["quality_score"] > 0
     assert run["verdicts"]["long_term"]["quality_state"] != "WITHHELD"
+
+
+def test_foreign_filer_with_unresolved_ads_ratio_is_withheld(home):
+    from tests.conftest import FakeClient
+    profile = {"cik": 1, "name": "ADS Test", "sic": "3674",
+               "latest_foreign_report": {"form": "20-F", "filed": "2026-06-24",
+                                         "period": "2026-03-31"}}
+    for ratio in (0.2, None):  # five ordinary shares per ADS, or no public float
+        run = run_mod.analyze("TEST", AS_OF,
+                              client=FakeClient(profile=profile, ads_ratio=ratio), save=False)
+        caveat = next(c for c in run["evidence"]["caveats"]
+                      if c["code"] == "ads_ratio_unresolved")
+        assert caveat["severity"] == "withhold"
+        assert run["verdicts"]["long_term"]["quality_state"] == "WITHHELD"

@@ -54,7 +54,7 @@ class FakeClient:
     so the point-in-time test can prove nothing later than `as_of` was asked for."""
 
     def __init__(self, bars=None, metrics=None, consensus=True, news=True,
-                 release=True, profile=None):
+                 release=True, profile=None, ads_ratio=None):
         self._bars = bars if bars is not None else make_bars(400)
         self._metrics = metrics if metrics is not None else [make_metrics()]
         self._consensus = consensus
@@ -65,6 +65,7 @@ class FakeClient:
             "sic_description": "Semiconductors", "exchanges": ["Nasdaq"],
             "latest_report": {"form": "10-Q", "filed": "2026-07-29", "period": "2026-06-30"},
         }
+        self._ads_ratio = ads_ratio
         self.requested_ends: list[date] = []
         self.metrics_as_of: list[date] = []
 
@@ -94,6 +95,10 @@ class FakeClient:
 
     def profile(self, ticker):
         return dict(self._profile)
+
+    def ads_price_ratio(self, ticker, as_of):
+        self.requested_ends.append(as_of)
+        return self._ads_ratio
 
     def consensus(self, ticker):
         if not self._consensus:

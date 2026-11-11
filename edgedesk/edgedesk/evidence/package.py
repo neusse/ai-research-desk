@@ -354,7 +354,16 @@ def _collect_fundamentals(ev: Evidence, as_of: date, client: DataClient) -> None
         ev.warn("foreign_filer_normalized", DEGRADE,
                 f"Fundamentals were normalized from standard US GAAP facts in "
                 f"{foreign.get('form')} and financial 6-K filings. Interim 6-K disclosure is less "
-                "uniform than a 10-Q, so the rating is allowed at reduced data confidence.")
+                "uniform than a 10-Q, so a supported rating has reduced data confidence.")
+        try:
+            ratio = client.ads_price_ratio(ev.ticker, as_of)
+        except Exception:  # noqa: BLE001
+            ratio = None
+        if ratio is None or not 0.5 <= ratio <= 2.0:
+            ev.warn("ads_ratio_unresolved", WITHHOLD,
+                    "ADS-to-ordinary share ratio could not be confirmed from a filed public "
+                    "float, the same filing's ordinary-share count, and the float-date close; "
+                    "per-share and valuation figures may be scaled wrong.")
     latest = ev.metrics[0]
     _check_freshness(ev, latest)
     _check_shares(ev, latest)
